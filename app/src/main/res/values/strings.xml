@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sunshine</string>
+
+    <string name="onboarding_tagline">Связь без вышек и интернета.</string>
+    <string name="onboarding_description">Устройства рядом находят друг друга по Wi-Fi Direct или Bluetooth и передают сообщения по цепочке. Ник и ключи хранятся только на этом устройстве.</string>
+    <string name="nickname_label">Ник</string>
+    <string name="nickname_hint">Как тебя зовут?</string>
+    <string name="nickname_error_empty">Введи ник.</string>
+    <string name="nickname_error_too_long">Не больше 32 символов.</string>
+    <string name="nickname_error_control">Убери управляющие символы.</string>
+    <string name="onboarding_action">Создать профиль</string>
+    <string name="onboarding_action_busy">Создаём…</string>
+    <string name="onboarding_footnote">Профиль нельзя восстановить на другом устройстве.</string>
+    <string name="profile_create_error">Не удалось создать профиль. Попробуй ещё раз.</string>
+
+    <string name="profile_title">Профиль</string>
+    <string name="profile_nickname">Ник</string>
+    <string name="profile_peer_id">Отпечаток ключа</string>
+    <string name="profile_peer_id_hint">По нему можно сверить ключ при личной встрече.</string>
+
+    <string name="permissions_title">Устройства рядом</string>
+    <string name="permissions_body">Для поиска нужен доступ к геолокации на Android 12 и ниже либо к устройствам рядом на Android 13 и выше. Приложение не отслеживает местоположение.</string>
+    <string name="permissions_grant">Разрешить</string>
+    <string name="permissions_granted">Разрешения выданы</string>
+    <string name="permissions_denied">Без разрешений поиск устройств не работает.</string>
+
+    <string name="load_error_title">Не удалось прочитать профиль</string>
+    <string name="load_error_body">Данные профиля повреждены или недоступны. Перезапусти приложение; если ошибка повторится, потребуется сброс данных.</string>
+    <string name="load_error_retry">Повторить</string>
+    <string name="loading">Загрузка…</string>
+</resources>
