@@ -20,5 +20,8 @@ class E2EException(
         WRONG_RECIPIENT,
         WRONG_SENDER,
         KEY_DERIVATION_FAILED,
+        NONCE_REUSE,
+        ENCRYPTION_FAILED,
+        DECRYPTION_FAILED,
     }
 }
