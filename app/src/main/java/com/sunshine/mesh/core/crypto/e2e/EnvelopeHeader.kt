@@ -37,7 +37,8 @@ data class EnvelopeHeader(
     companion object {
         const val CURRENT_VERSION = 1
 
-        fun text(
+        fun of(
+            type: EnvelopeType,
             messageId: MessageId,
             senderId: PeerId,
             recipientId: PeerId,
@@ -46,6 +47,23 @@ data class EnvelopeHeader(
             totalParts: Int,
         ): EnvelopeHeader = EnvelopeHeader(
             version = CURRENT_VERSION,
+            type = type,
+            messageId = messageId,
+            senderId = senderId,
+            recipientId = recipientId,
+            paddingLength = paddingLength,
+            partIndex = partIndex,
+            totalParts = totalParts,
+        )
+
+        fun text(
+            messageId: MessageId,
+            senderId: PeerId,
+            recipientId: PeerId,
+            paddingLength: Int,
+            partIndex: Int,
+            totalParts: Int,
+        ): EnvelopeHeader = of(
             type = EnvelopeType.TEXT,
             messageId = messageId,
             senderId = senderId,

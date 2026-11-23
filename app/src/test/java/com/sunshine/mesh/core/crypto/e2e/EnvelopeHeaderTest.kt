@@ -74,8 +74,10 @@ class EnvelopeHeaderTest {
     @Test
     fun textAndUnknownTypeAreDistinct() {
         assertEquals(EnvelopeType.TEXT, EnvelopeType.fromCode(1))
+        assertEquals(EnvelopeType.KEY_EXCHANGE, EnvelopeType.fromCode(2))
+        assertEquals(EnvelopeType.RECEIPT, EnvelopeType.fromCode(3))
         assertThrows(E2EException::class.java) {
-            EnvelopeType.fromCode(2)
+            EnvelopeType.fromCode(99)
         }
     }
 

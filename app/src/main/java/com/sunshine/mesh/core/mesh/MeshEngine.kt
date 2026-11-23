@@ -10,9 +10,11 @@ import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 
 /**
@@ -29,17 +31,20 @@ class MeshEngine(
     scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
     private val retryIntervalMs: Long = MeshPolicy.RETRY_INTERVAL_MS,
-) : Closeable {
+) : MeshSender {
+
+    override val peers: StateFlow<Set<PeerId>> = transport.peers
 
     private val engineJob = Job(scope.coroutineContext[Job])
     private val engineScope = CoroutineScope(scope.coroutineContext + engineJob)
+    private val retrySignal = Channel<Unit>(Channel.CONFLATED)
 
     @Volatile
     private var closed = false
 
     private var started = false
 
-    fun start() {
+    override fun start() {
         if (closed) throw TransportException(TransportError.INTERNAL)
         if (started) return
         started = true
@@ -48,23 +53,25 @@ class MeshEngine(
         }
         engineScope.launch {
             while (isActive) {
-                delay(retryIntervalMs)
+                withTimeoutOrNull(retryIntervalMs) { retrySignal.receive() }
                 retryDue()
             }
         }
     }
 
     /**
-     * Wraps a local envelope into a mesh packet and floods it to every linked
-     * peer. Persistence of our own outbox is Stage 5.
+     * Builds a 546-byte mesh packet with a fresh hop TTL. Pure: it does not
+     * mark the fragment as seen and does not touch the transport.
      */
-    suspend fun send(envelope: ByteArray, recipientId: PeerId, msgId: MessageId) {
+    override fun wrap(
+        envelope: ByteArray,
+        recipientId: PeerId,
+        msgId: MessageId,
+    ): ByteArray {
         if (closed) throw TransportException(TransportError.INTERNAL)
         if (envelope.size != EnvelopeCodec.ENVELOPE_BYTES) {
             throw TransportException(TransportError.PACKET_TOO_LARGE)
         }
-        val partIndex = envelope[EnvelopeCodec.PART_INDEX_OFFSET].toInt() and 0xff
-        seen.markSeen(msgId, partIndex)
         val header = MeshHeader(
             version = MeshHeader.VERSION,
             ttl = MeshPolicy.DEFAULT_TTL,
@@ -72,17 +79,62 @@ class MeshEngine(
             senderId = localPeerId,
             recipientId = recipientId,
         )
-        val bytes = header.encode() + envelope
-        try {
-            broadcast(bytes, exclude = null)
-        } finally {
-            bytes.fill(0)
+        return header.encode() + envelope
+    }
+
+    /**
+     * Floods an already wrapped packet to every linked peer. The sender is the
+     * local node; inbound packets are never passed here. Returns how many links
+     * were attempted and how many accepted the packet.
+     */
+    override suspend fun sendPacket(packet: ByteArray): MeshSendResult {
+        if (closed) throw TransportException(TransportError.INTERNAL)
+        if (packet.size != MeshPacket.TOTAL_BYTES) {
+            throw TransportException(TransportError.PACKET_TOO_LARGE)
         }
+
+        val header = try {
+            MeshHeader.decode(packet.copyOfRange(0, MeshHeader.SIZE))
+        } catch (error: TransportException) {
+            throw TransportException(TransportError.PROTOCOL_ERROR, error)
+        }
+        if (header.senderId != localPeerId || header.ttl <= 0) {
+            throw TransportException(TransportError.PROTOCOL_ERROR)
+        }
+
+        val partIndex = packet[MeshHeader.SIZE + EnvelopeCodec.PART_INDEX_OFFSET].toInt() and 0xff
+        seen.markSeen(header.msgId, partIndex)
+        return broadcast(packet, exclude = null)
+    }
+
+    /**
+     * Wraps a local envelope and floods it. The temporary packet is wiped even
+     * when the transport throws.
+     */
+    suspend fun send(
+        envelope: ByteArray,
+        recipientId: PeerId,
+        msgId: MessageId,
+    ): MeshSendResult {
+        val packet = wrap(envelope, recipientId, msgId)
+        return try {
+            sendPacket(packet)
+        } finally {
+            packet.fill(0)
+        }
+    }
+
+    /** Wakes the retry loop without waiting for [retryIntervalMs]. */
+    override fun requestRetry() {
+        if (closed) return
+        retrySignal.trySend(Unit)
     }
 
     override fun close() {
         if (closed) return
         closed = true
+        // Cancellation stops the pending receive; closing the channel first
+        // would surface ClosedReceiveChannelException instead.
         engineJob.cancel()
     }
 
@@ -133,15 +185,20 @@ class MeshEngine(
         }
     }
 
-    private suspend fun broadcast(bytes: ByteArray, exclude: PeerId?) {
+    private suspend fun broadcast(bytes: ByteArray, exclude: PeerId?): MeshSendResult {
+        var attempted = 0
+        var delivered = 0
         for (peer in transport.peers.value) {
             if (peer == localPeerId || peer == exclude) continue
+            attempted += 1
             try {
                 transport.send(peer, bytes)
+                delivered += 1
             } catch (error: TransportException) {
                 // A link can vanish mid-flood; the remaining peers still get it.
             }
         }
+        return MeshSendResult(attempted = attempted, delivered = delivered)
     }
 
     /**
@@ -183,6 +240,34 @@ class MeshEngine(
             }
         }
     }
+}
+
+/**
+ * Outbound facade used by the coordinator. [close] stops the engine but leaves
+ * the underlying transport open: TransportHub owns the transports.
+ */
+interface MeshSender : Closeable {
+    /** Links currently visible to the mesh layer. */
+    val peers: StateFlow<Set<PeerId>>
+
+    fun start()
+
+    fun wrap(
+        envelope: ByteArray,
+        recipientId: PeerId,
+        msgId: MessageId,
+    ): ByteArray
+
+    suspend fun sendPacket(packet: ByteArray): MeshSendResult
+
+    fun requestRetry()
+}
+
+data class MeshSendResult(
+    val attempted: Int,
+    val delivered: Int,
+) {
+    val reachedAnyLink: Boolean get() = delivered > 0
 }
 
 /**

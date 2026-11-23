@@ -41,8 +41,13 @@ object EnvelopeCodec {
     const val PART_INDEX_OFFSET = 36
     private const val OFFSET_TOTAL_PARTS = 37
     private const val OFFSET_NONCE = OFFSET_TOTAL_PARTS + TOTAL_PARTS_BYTES
-    private const val OFFSET_CIPHERTEXT = OFFSET_NONCE + NONCE_BYTES
-    private const val OFFSET_TAG = OFFSET_CIPHERTEXT + CIPHERTEXT_BYTES
+
+    /**
+     * Public ciphertext offset. Control envelopes such as KEY_EXCHANGE carry
+     * unencrypted payload bytes here and must not copy the whole envelope.
+     */
+    const val CIPHERTEXT_OFFSET = AAD_BYTES + NONCE_BYTES
+    private const val OFFSET_TAG = CIPHERTEXT_OFFSET + CIPHERTEXT_BYTES
 
     /**
      * Appends random padding so the plaintext buffer fed to AES-GCM is exactly
@@ -103,16 +108,16 @@ object EnvelopeCodec {
             packet[PART_INDEX_OFFSET] = header.partIndex.toByte()
             packet[OFFSET_TOTAL_PARTS] = header.totalParts.toByte()
             nonce.copyInto(packet, OFFSET_NONCE)
-            ciphertext.copyInto(packet, OFFSET_CIPHERTEXT)
+            ciphertext.copyInto(packet, CIPHERTEXT_OFFSET)
             tag.copyInto(packet, OFFSET_TAG)
         }
     }
 
     /**
-     * Parses the fixed-size packet. Oversized input is rejected by its length
+     * Parses only the public header. Oversized input is rejected by its length
      * before any copying, parsing or decrypting happens.
      */
-    fun decode(packet: ByteArray): E2EEnvelope {
+    fun peekHeader(packet: ByteArray): EnvelopeHeader {
         if (packet.size > ENVELOPE_BYTES) {
             throw E2EException(E2EException.Code.ENVELOPE_TOO_LARGE)
         }
@@ -135,27 +140,33 @@ object EnvelopeCodec {
             throw E2EException(E2EException.Code.MALFORMED_ENVELOPE)
         }
 
-        return E2EEnvelope(
-            header = EnvelopeHeader(
-                version = version,
-                type = type,
-                messageId = MessageId.fromBytes(
-                    packet.copyOfRange(OFFSET_MESSAGE_ID, OFFSET_MESSAGE_ID + 16),
-                ),
-                senderId = PeerId.fromBytes(
-                    packet.copyOfRange(OFFSET_SENDER_ID, OFFSET_SENDER_ID + 8),
-                ),
-                recipientId = PeerId.fromBytes(
-                    packet.copyOfRange(OFFSET_RECIPIENT_ID, OFFSET_RECIPIENT_ID + 8),
-                ),
-                paddingLength = paddingLength,
-                partIndex = partIndex,
-                totalParts = totalParts,
+        return EnvelopeHeader(
+            version = version,
+            type = type,
+            messageId = MessageId.fromBytes(
+                packet.copyOfRange(OFFSET_MESSAGE_ID, OFFSET_MESSAGE_ID + 16),
             ),
+            senderId = PeerId.fromBytes(
+                packet.copyOfRange(OFFSET_SENDER_ID, OFFSET_SENDER_ID + 8),
+            ),
+            recipientId = PeerId.fromBytes(
+                packet.copyOfRange(OFFSET_RECIPIENT_ID, OFFSET_RECIPIENT_ID + 8),
+            ),
+            paddingLength = paddingLength,
+            partIndex = partIndex,
+            totalParts = totalParts,
+        )
+    }
+
+    /** Parses the fixed-size packet and copies the encrypted payload parts. */
+    fun decode(packet: ByteArray): E2EEnvelope {
+        val header = peekHeader(packet)
+        return E2EEnvelope(
+            header = header,
             nonce = packet.copyOfRange(OFFSET_NONCE, OFFSET_NONCE + NONCE_BYTES),
             ciphertext = packet.copyOfRange(
-                OFFSET_CIPHERTEXT,
-                OFFSET_CIPHERTEXT + CIPHERTEXT_BYTES,
+                CIPHERTEXT_OFFSET,
+                CIPHERTEXT_OFFSET + CIPHERTEXT_BYTES,
             ),
             tag = packet.copyOfRange(OFFSET_TAG, OFFSET_TAG + TAG_BYTES),
         )

@@ -26,7 +26,7 @@ class PeerRepository(
     private val peerDao: PeerDao,
     private val transactions: PeerTransactions,
     private val now: () -> Long = System::currentTimeMillis,
-) : PeerTrustStore {
+) : PeerTrustStore, PeerKeyStore {
 
     override suspend fun checkAndUpdateKey(
         peerId: PeerId,
@@ -64,7 +64,7 @@ class PeerRepository(
      * Accepts the key the user actually saw. Returns false without changing
      * anything if lastSeenPublicKey moved since the dialog was shown.
      */
-    suspend fun acceptKey(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
+    override suspend fun acceptKey(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
         requireMatchingKey(expectedPublicKey)
 
         return transactions.run {
@@ -116,7 +116,7 @@ class PeerRepository(
     override suspend fun getTrustState(peerId: PeerId): TrustState =
         peerDao.find(peerId.value)?.trustState ?: TrustState.UNKNOWN
 
-    suspend fun getPeer(peerId: PeerId): Peer? =
+    override suspend fun getPeer(peerId: PeerId): Peer? =
         peerDao.find(peerId.value)?.toDomain()
 
     fun observePeer(peerId: PeerId): Flow<Peer?> =

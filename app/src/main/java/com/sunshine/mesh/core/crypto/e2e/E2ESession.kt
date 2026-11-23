@@ -39,14 +39,30 @@ class E2ESession(
         check(!closed) { "session is closed" }
         val plaintext = text.toByteArray(StandardCharsets.UTF_8)
         try {
-            val totalParts = partCount(plaintext.size)
-            return buildList(totalParts) {
-                for (partIndex in 0 until totalParts) {
-                    add(sealPart(messageId, plaintext, partIndex, totalParts))
-                }
-            }
+            return seal(EnvelopeType.TEXT, messageId, plaintext)
         } finally {
             plaintext.fill(0)
+        }
+    }
+
+    /**
+     * Encrypts an arbitrary payload. KEY_EXCHANGE is unencrypted by design and
+     * must be built with [KeyExchangeCodec] instead.
+     */
+    fun seal(
+        type: EnvelopeType,
+        messageId: MessageId,
+        payload: ByteArray,
+    ): List<ByteArray> {
+        check(!closed) { "session is closed" }
+        if (type == EnvelopeType.KEY_EXCHANGE) {
+            throw E2EException(E2EException.Code.UNKNOWN_TYPE)
+        }
+        val totalParts = partCount(payload.size)
+        return buildList(totalParts) {
+            for (partIndex in 0 until totalParts) {
+                add(sealPart(type, messageId, payload, partIndex, totalParts))
+            }
         }
     }
 
@@ -54,12 +70,18 @@ class E2ESession(
      * Authenticates and decrypts one envelope. The returned fragment is not
      * text: reassembly must finish before any UTF-8 decoding.
      */
-    fun openFragment(packet: ByteArray): OpenedFragment {
+    fun openFragment(
+        packet: ByteArray,
+        expectedType: EnvelopeType = EnvelopeType.TEXT,
+    ): OpenedFragment {
         check(!closed) { "session is closed" }
+        if (expectedType == EnvelopeType.KEY_EXCHANGE) {
+            throw E2EException(E2EException.Code.UNKNOWN_TYPE)
+        }
         val envelope = EnvelopeCodec.decode(packet)
         try {
             val header = envelope.header
-            if (header.type != EnvelopeType.TEXT) {
+            if (header.type != expectedType) {
                 throw E2EException(E2EException.Code.UNKNOWN_TYPE)
             }
             if (header.recipientId != localPeerId) {
@@ -107,6 +129,7 @@ class E2ESession(
         "E2ESession(localPeerId=$localPeerId, remotePeerId=$remotePeerId, closed=$closed)"
 
     private fun sealPart(
+        type: EnvelopeType,
         messageId: MessageId,
         plaintext: ByteArray,
         partIndex: Int,
@@ -118,7 +141,8 @@ class E2ESession(
         try {
             val padded = EnvelopeCodec.pad(chunk, random)
             try {
-                val header = EnvelopeHeader.text(
+                val header = EnvelopeHeader.of(
+                    type = type,
                     messageId = messageId,
                     senderId = localPeerId,
                     recipientId = remotePeerId,
@@ -173,7 +197,7 @@ class E2ESession(
             EnvelopeCodec.MAX_PLAINTEXT_BYTES
     }
 
-    private companion object {
+    companion object {
         const val MAX_MESSAGE_BYTES =
             EnvelopeCodec.MAX_PARTS * EnvelopeCodec.MAX_PLAINTEXT_BYTES
     }

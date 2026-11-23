@@ -12,9 +12,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.sunshine.mesh.R
 import com.sunshine.mesh.SunshineApp
+import com.sunshine.mesh.coordinator.MeshCoordinator
+import com.sunshine.mesh.core.mesh.MeshEngine
+import com.sunshine.mesh.core.mesh.SeenCache
 import com.sunshine.mesh.core.transport.TransportException
+import com.sunshine.mesh.core.transport.TransportHub
 import com.sunshine.mesh.core.transport.TransportState
-import com.sunshine.mesh.core.transport.ble.BleTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,9 +29,10 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * Foreground service that owns the BLE transport. The Activity binds to it and
- * observes [transport]; the service keeps scanning, advertising and GATT links
- * alive while the process is in the background.
+ * Foreground service that owns both transports, the mesh engine and the
+ * coordinator. The Activity binds to it in Stage 6; today it keeps scanning,
+ * advertising, GATT/Wi-Fi links and the outbox alive while the process is in the
+ * background.
  */
 class TransportService : Service() {
 
@@ -36,8 +40,11 @@ class TransportService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
 
-    private val mutableTransport = MutableStateFlow<BleTransport?>(null)
-    val transport: StateFlow<BleTransport?> = mutableTransport.asStateFlow()
+    private val mutableHub = MutableStateFlow<TransportHub?>(null)
+    val hub: StateFlow<TransportHub?> = mutableHub.asStateFlow()
+
+    private val mutableCoordinator = MutableStateFlow<MeshCoordinator?>(null)
+    val coordinator: StateFlow<MeshCoordinator?> = mutableCoordinator.asStateFlow()
 
     private var starting = false
 
@@ -63,27 +70,49 @@ class TransportService : Service() {
 
         if (!starting) {
             starting = true
-            serviceScope.launch { startTransport() }
+            serviceScope.launch { startMesh() }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
-        mutableTransport.value?.close()
-        mutableTransport.value = null
+        mutableCoordinator.value?.close()
+        mutableCoordinator.value = null
+        mutableHub.value?.close()
+        mutableHub.value = null
         serviceJob.cancel()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
-    private suspend fun startTransport() {
+    private suspend fun startMesh() {
+        var hub: TransportHub? = null
+        var coordinator: MeshCoordinator? = null
         try {
             val graph = (application as SunshineApp).graph
-            val created = graph.bleTransportFactory.create(serviceScope)
-            mutableTransport.value = created
-            created.start()
+            val ble = graph.bleTransportFactory.create(serviceScope)
+            val wifi = graph.wifiDirectTransportFactory.create(serviceScope)
+            hub = TransportHub(listOf(ble, wifi), serviceScope)
+            coordinator = graph.meshCoordinatorFactory.create(serviceScope)
+
+            val engine = MeshEngine(
+                transport = hub,
+                localPeerId = coordinator.localPeerId,
+                seen = SeenCache(),
+                store = graph.meshStore,
+                handler = coordinator,
+                scope = serviceScope,
+            )
+            coordinator.attach(engine)
+
+            mutableHub.value = hub
+            mutableCoordinator.value = coordinator
+
+            hub.start()
+            coordinator.start()
+
             serviceScope.launch {
-                created.state.collect { state ->
+                hub.state.collect { state ->
                     if (state is TransportState.Failed) {
                         Timber.w("Transport service stopping: code=%s", state.error)
                         stopSelf()
@@ -92,9 +121,13 @@ class TransportService : Service() {
             }
         } catch (error: TransportException) {
             Timber.w("Transport service failed to start: code=%s", error.code)
+            coordinator?.close()
+            hub?.close()
             stopSelf()
         } catch (error: Exception) {
             Timber.w("Transport service failed to start")
+            coordinator?.close()
+            hub?.close()
             stopSelf()
         }
     }
