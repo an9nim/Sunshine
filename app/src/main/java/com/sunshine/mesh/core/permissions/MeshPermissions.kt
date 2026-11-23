@@ -59,4 +59,18 @@ object MeshPermissions {
                 bleAdvertisePermissions(sdkInt) +
                 bleConnectPermissions(sdkInt)
             ).distinct()
+
+    /**
+     * Permissions tied to the connected-device foreground service. The FGS
+     * type permission is install-time on API 34+; POST_NOTIFICATIONS is the
+     * runtime gate for the ongoing notification on API 33+.
+     */
+    fun foregroundServicePermissions(sdkInt: Int): List<String> = buildList {
+        if (sdkInt >= 34) {
+            add(Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE)
+        }
+        if (sdkInt >= 33) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 }

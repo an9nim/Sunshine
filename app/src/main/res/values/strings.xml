@@ -29,4 +29,8 @@
     <string name="load_error_body">Данные профиля повреждены или недоступны. Перезапусти приложение; если ошибка повторится, потребуется сброс данных.</string>
     <string name="load_error_retry">Повторить</string>
     <string name="loading">Загрузка…</string>
+
+    <string name="transport_channel_name">Соединение с устройствами</string>
+    <string name="transport_notification_title">Sunshine рядом</string>
+    <string name="transport_notification_text">Ищем устройства и держим BLE-соединения.</string>
 </resources>

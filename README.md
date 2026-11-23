@@ -4,7 +4,7 @@ Mesh-мессенджер для Android: сообщения передаютс�
 
 > **До использования:** MVP работает по модели TOFU, без forward secrecy и без подписей отправителя. Подробности и остальные ограничения — ниже.
 
-## Статус: Stage 2 (E2E) завершён
+## Статус: Stage 3 (BLE-транспорт) завершён
 
 Сделано:
 
@@ -19,17 +19,40 @@ Mesh-мессенджер для Android: сообщения передаютс�
 - конверты фиксированного размера 512 байт, AAD 38 байт, padding до 446 байт, фрагментация до 255 частей;
 - `E2ESession.sealText/openFragment/close`, `EnvelopeCipher` с защитой от повторного nonce, `FragmentAssembler`;
 - TOFU, `KEY_CHANGED` и Safety Number в ядре, `PeerTrustGate` до открытия сессии;
-- 120 unit-тестов в 19 suites, BUILD SUCCESSFUL.
+- BLE-транспорт: непрозрачные 512-байтные пакеты, `Transport`, GATT server/client, chunking и reassembly с таймаутом 10 с;
+- реклама 19 байт (16-bit UUID `0xFFF0` + 8-byte peerId), `ScanFilter` по UUID, проверки Location на API 24–30;
+- роль по peerId: меньший подключается (central), больший принимает (peripheral); лимит 4 линка;
+- INDICATE с подтверждением `onNotificationSent`, per-connection Mutex, MTU fallback 23, проверка версии HELLO/HELLO_ACK;
+- `TransportService` (foreground service `connectedDevice`) и фабрика транспорта в `AppGraph`;
+- 205 unit-тестов в 29 suites, BUILD SUCCESSFUL.
 
-**Важно:** E2E-ядро готово, но транспорта ещё нет. Сообщения между устройствами пока не передаются: BLE-транспорт появится в Stage 3.
+**Важно:** E2E-ядро и BLE-транспорт готовы, но сообщения между устройствами пока не передаются end-to-end: связка E2E ↔ Transport появится в Stage 5, экраны — в Stage 6. Транспорт доставляет только непрозрачные 512-байтные пакеты и не знает о содержимом конвертов.
 
-### Следующий этап: Stage 3 (BLE)
+### BLE-транспорт: покрытие тестами
 
-- BLE scan/advertise/GATT и foreground service.
-- Экраны чатов и сети.
-- Wi-Fi Direct — позже, после BLE.
+Код BLE-транспорта покрыт unit-тестами с fake-объектами. Проверка на реальных устройствах (GATT-сервер, реклама, сканирование) запланирована на Stage 6 после появления UI.
 
-Таймаут BLE-соединения 10 секунд уже реализован в `core/net`.
+### Следующий этап: Stage 4 (Wi-Fi Direct и Mesh-логика)
+
+- Wi-Fi Direct транспорт поверх того же интерфейса `Transport` (send/incoming/close).
+- Mesh-логика: flooding, TTL, дедупликация по `msgId`.
+- Store-and-forward только для собственных исходящих пакетов.
+
+### План этапов
+
+| Этап | Содержание | Статус |
+| --- | --- | --- |
+| Stage 1 | Скелет проекта, Room, Identity | Сделано |
+| Stage 2 | E2E-шифрование, фрагментация, TOFU | Сделано |
+| Stage 3 | BLE-транспорт | Сделано |
+| Stage 4 | Wi-Fi Direct транспорт и Mesh-логика (flooding, TTL, store-and-forward) | Следующий |
+| Stage 5 | Интеграция (MeshEngine, связка E2E + Transport + Room) | |
+| Stage 6 | UI/UX (экраны чатов, профиля, сети), проверка BLE на реальных устройствах | |
+| Stage 7 | Оптимизация, Foreground Service, релиз | |
+
+Каркас `TransportService` уже существует с Stage 3; финальная доработка сервиса — Stage 7.
+
+Таймаут BLE-соединения 10 секунд реализован в `core/net` и в сборщике пакетов.
 
 ## Что такое E2E в Sunshine
 
@@ -186,10 +209,11 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 ## Разрешения
 
 - API 24–32: `ACCESS_FINE_LOCATION` и `ACCESS_COARSE_LOCATION` запрашиваются в runtime парой (в манифесте ограничены `maxSdkVersion="32"`): Android 12+ требует оба разрешения.
-- API 31+: `BLUETOOTH_SCAN` и `BLUETOOTH_CONNECT`; для сканирования указан `neverForLocation`.
-- API 33+: `NEARBY_WIFI_DEVICES` с `neverForLocation`.
+- API 31+: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` и `BLUETOOTH_ADVERTISE`; для сканирования указан `neverForLocation`.
+- API 33+: `NEARBY_WIFI_DEVICES` с `neverForLocation`, `POST_NOTIFICATIONS` для уведомления сервиса.
+- API 34+: `FOREGROUND_SERVICE_CONNECTED_DEVICE` для foreground service типа `connectedDevice`.
 - Кнопка запроса находится на экране профиля; без разрешений поиск устройств не запускается.
-- Разрешения BLE уже объявлены в манифесте и будут использованы в Stage 3.
+- `TransportService` объявлен в манифесте с `foregroundServiceType="connectedDevice"` и `exported="false"`.
 
 ## Сборка и тесты
 
@@ -201,7 +225,7 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 
 Gradle wrapper включён в репозиторий.
 
-120 unit-тестов в 19 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519 и BLE-таймаут. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
+205 unit-тестов в 29 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519, BLE-таймаут, кодек кадров, сборщик пакетов, рекламу, GATT-линки и `BleTransport`. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
 
 Инструментальный тест миграции `migration1To2KeepsDataAndResetsTrust` ранее прошёл на реальном устройстве. В Шаге 5 он не перезапускался: изменения его не затрагивают.
 
@@ -214,12 +238,14 @@ app/src/main/java/com/sunshine/mesh/
   core/ids/          PeerId, MessageId
   core/net/          таймаут соединения, политика mesh
   core/permissions/  runtime-разрешения
+  core/transport/    Transport, BLE codec/assembler, GATT, links, BleTransport
   data/local/        Room: entity, dao, database, migrations
   data/peer/         PeerRepository, PeerTrustGate, trust store
   data/profile/      DataStore и репозиторий профиля
   domain/message/    FragmentAssembler
   domain/model/      Profile, TrustState, направления и статусы сообщений
   domain/validation/ Nickname
+  service/           TransportService (foreground service connectedDevice)
   ui/                onboarding, profile, permissions, theme
 ```
 

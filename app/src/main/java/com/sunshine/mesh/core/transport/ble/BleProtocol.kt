@@ -27,6 +27,7 @@ object BleProtocol {
     const val REQUESTED_MTU = 517
 
     const val MAX_CHUNKS = 255
+    const val MAX_LINKS = 4
     const val TRANSFER_TIMEOUT_MS = 10_000L
     const val CONNECT_TIMEOUT_MS = 10_000L
     const val GATT_OPEN_TIMEOUT_MS = 10_000L

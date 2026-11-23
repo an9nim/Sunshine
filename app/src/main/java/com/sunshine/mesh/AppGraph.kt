@@ -2,6 +2,7 @@ package com.sunshine.mesh
 
 import android.content.Context
 import com.sunshine.mesh.core.crypto.KeystoreSecret
+import com.sunshine.mesh.core.transport.ble.BleTransportFactory
 import com.sunshine.mesh.data.local.SunshineDatabase
 import com.sunshine.mesh.data.peer.PeerRepository
 import com.sunshine.mesh.data.peer.RoomPeerTransactions
@@ -33,5 +34,9 @@ class AppGraph(context: Context) {
             peerDao = database.peerDao(),
             transactions = RoomPeerTransactions(database),
         )
+    }
+
+    val bleTransportFactory: BleTransportFactory by lazy {
+        BleTransportFactory(appContext, profileRepository)
     }
 }

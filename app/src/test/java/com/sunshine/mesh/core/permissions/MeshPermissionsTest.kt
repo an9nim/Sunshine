@@ -90,4 +90,24 @@ class MeshPermissionsTest {
         assertTrue(Manifest.permission.BLUETOOTH_ADVERTISE in permissions)
         assertTrue(Manifest.permission.BLUETOOTH_CONNECT in permissions)
     }
+
+    @Test
+    fun api30HasNoForegroundServiceRuntimePermissions() {
+        assertTrue(MeshPermissions.foregroundServicePermissions(30).isEmpty())
+    }
+
+    @Test
+    fun api33RequiresPostNotifications() {
+        val permissions = MeshPermissions.foregroundServicePermissions(33)
+
+        assertEquals(listOf(Manifest.permission.POST_NOTIFICATIONS), permissions)
+    }
+
+    @Test
+    fun api34AddsConnectedDeviceFgsPermission() {
+        val permissions = MeshPermissions.foregroundServicePermissions(34)
+
+        assertTrue(Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE in permissions)
+        assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
+    }
 }
