@@ -53,6 +53,19 @@ object MeshPermissions {
             emptyList()
         }
 
+    /**
+     * Wi-Fi Direct discovery needs fine location with location services on
+     * API 24-32; from API 33 the nearby-devices permission replaces it.
+     */
+    fun wifiDirectPermissions(sdkInt: Int): List<String> = buildList {
+        if (sdkInt <= 32) {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        } else {
+            add(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+    }
+
     fun blePermissions(sdkInt: Int): List<String> =
         (
             bleScanPermissions(sdkInt) +

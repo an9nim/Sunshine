@@ -45,6 +45,65 @@ class SunshineDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration2To3AddsPendingPacketsAndKeepsData() {
+        val version2 = helper.createDatabase(DATABASE_NAME, 2)
+        try {
+            version2.execSQL(
+                "INSERT INTO seen_ids (msg_id, part_index, seen_at) VALUES (?, ?, ?)",
+                arrayOf<Any>(FIRST_MSG_ID, 0, FIRST_SEEN_AT),
+            )
+        } finally {
+            version2.close()
+        }
+
+        val database = helper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            3,
+            true,
+            MIGRATION_2_3,
+        )
+        try {
+            database.query(
+                "SELECT COUNT(*) FROM seen_ids WHERE msg_id = ?",
+                arrayOf(FIRST_MSG_ID),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+
+            database.execSQL(
+                "INSERT INTO pending_packets " +
+                    "(sender_id, payload, created_at, expires_at, next_retry_at) " +
+                    "VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any>(PEER_ID, byteArrayOf(1, 2, 3), 1_000L, 5_000L, 2_000L),
+            )
+            database.query(
+                "SELECT sender_id, payload, expires_at FROM pending_packets",
+                emptyArray(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(PEER_ID, cursor.getString(cursor.getColumnIndexOrThrow("sender_id")))
+                assertArrayEquals(
+                    byteArrayOf(1, 2, 3),
+                    cursor.getBlob(cursor.getColumnIndexOrThrow("payload")),
+                )
+                assertEquals(5_000L, cursor.getLong(cursor.getColumnIndexOrThrow("expires_at")))
+            }
+
+            database.execSQL(
+                "DELETE FROM pending_packets WHERE expires_at <= ?",
+                arrayOf<Any>(6_000L),
+            )
+            database.query("SELECT COUNT(*) FROM pending_packets", emptyArray()).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            database.close()
+        }
+    }
+
     private fun createVersion1Database() {
         val database = helper.createDatabase(DATABASE_NAME, 1)
         try {

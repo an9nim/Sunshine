@@ -3,6 +3,7 @@ package com.sunshine.mesh
 import android.content.Context
 import com.sunshine.mesh.core.crypto.KeystoreSecret
 import com.sunshine.mesh.core.transport.ble.BleTransportFactory
+import com.sunshine.mesh.core.transport.wifidirect.WifiDirectTransportFactory
 import com.sunshine.mesh.data.local.SunshineDatabase
 import com.sunshine.mesh.data.peer.PeerRepository
 import com.sunshine.mesh.data.peer.RoomPeerTransactions
@@ -38,5 +39,9 @@ class AppGraph(context: Context) {
 
     val bleTransportFactory: BleTransportFactory by lazy {
         BleTransportFactory(appContext, profileRepository)
+    }
+
+    val wifiDirectTransportFactory: WifiDirectTransportFactory by lazy {
+        WifiDirectTransportFactory(appContext, profileRepository)
     }
 }
