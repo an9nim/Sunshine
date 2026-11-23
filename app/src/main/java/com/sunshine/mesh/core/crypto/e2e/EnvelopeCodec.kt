@@ -37,7 +37,8 @@ object EnvelopeCodec {
     private const val OFFSET_SENDER_ID = 18
     private const val OFFSET_RECIPIENT_ID = 26
     private const val OFFSET_PADDING_LENGTH = 34
-    private const val OFFSET_PART_INDEX = 36
+    /** Public AAD offset; the mesh layer reads partIndex without decrypting. */
+    const val PART_INDEX_OFFSET = 36
     private const val OFFSET_TOTAL_PARTS = 37
     private const val OFFSET_NONCE = OFFSET_TOTAL_PARTS + TOTAL_PARTS_BYTES
     private const val OFFSET_CIPHERTEXT = OFFSET_NONCE + NONCE_BYTES
@@ -99,7 +100,7 @@ object EnvelopeCodec {
             header.recipientId.toByteArray().copyInto(packet, OFFSET_RECIPIENT_ID)
             packet[OFFSET_PADDING_LENGTH] = (header.paddingLength ushr 8).toByte()
             packet[OFFSET_PADDING_LENGTH + 1] = header.paddingLength.toByte()
-            packet[OFFSET_PART_INDEX] = header.partIndex.toByte()
+            packet[PART_INDEX_OFFSET] = header.partIndex.toByte()
             packet[OFFSET_TOTAL_PARTS] = header.totalParts.toByte()
             nonce.copyInto(packet, OFFSET_NONCE)
             ciphertext.copyInto(packet, OFFSET_CIPHERTEXT)
@@ -128,7 +129,7 @@ object EnvelopeCodec {
         if (paddingLength > MAX_PADDING_BYTES) {
             throw E2EException(E2EException.Code.MALFORMED_ENVELOPE)
         }
-        val partIndex = packet[OFFSET_PART_INDEX].toInt() and 0xff
+        val partIndex = packet[PART_INDEX_OFFSET].toInt() and 0xff
         val totalParts = packet[OFFSET_TOTAL_PARTS].toInt() and 0xff
         if (totalParts !in 1..MAX_PARTS || partIndex >= totalParts) {
             throw E2EException(E2EException.Code.MALFORMED_ENVELOPE)

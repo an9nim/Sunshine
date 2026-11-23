@@ -47,6 +47,9 @@ class BleTransport(
     private val mutableState = MutableStateFlow<TransportState>(TransportState.Idle)
     override val state: StateFlow<TransportState> = mutableState.asStateFlow()
 
+    private val mutablePeers = MutableStateFlow<Set<PeerId>>(emptySet())
+    override val peers: StateFlow<Set<PeerId>> = mutablePeers.asStateFlow()
+
     private val incomingChannel = Channel<InboundPacket>(capacity = INCOMING_QUEUE_CAPACITY)
     override val incoming: Flow<InboundPacket> = incomingChannel.receiveAsFlow()
 
@@ -302,6 +305,7 @@ class BleTransport(
             all
         }
         snapshot.forEach { it.close() }
+        mutablePeers.value = emptySet()
         scanner.close()
         advertiser.close()
         server.close()
@@ -309,9 +313,11 @@ class BleTransport(
     }
 
     private fun updateRunningState() {
+        val snapshot = synchronized(registryLock) { links.keys.toSet() }
+        mutablePeers.value = snapshot
         if (closed) return
         if (mutableState.value is TransportState.Running) {
-            mutableState.value = TransportState.Running(linkCount())
+            mutableState.value = TransportState.Running(snapshot.size)
         }
     }
 

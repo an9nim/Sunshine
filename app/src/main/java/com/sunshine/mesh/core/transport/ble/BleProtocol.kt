@@ -3,15 +3,15 @@ package com.sunshine.mesh.core.transport.ble
 /**
  * BLE transport protocol constants.
  *
- * The E2E envelope is always 512 bytes. A GATT attribute value is also capped
- * at 512 bytes, so a DATA frame can carry at most 508 payload bytes after the
- * 4-byte frame header. At the default ATT MTU of 23 that leaves 16 bytes of
- * payload per chunk.
+ * A transport packet is a 34-byte mesh header plus the 512-byte E2E envelope
+ * (546 bytes total). A GATT attribute value is capped at 512 bytes, so a DATA
+ * frame carries at most 508 payload bytes after the 4-byte frame header. At
+ * the default ATT MTU of 23 that leaves 16 bytes of payload per chunk.
  */
 object BleProtocol {
     const val VERSION = 1
 
-    const val MAX_PACKET_BYTES = 512
+    const val MAX_PACKET_BYTES = 546
     const val MAX_ATTRIBUTE_BYTES = 512
 
     // Legacy advertising: 16-bit service UUID + 8-byte peer id fits in 19 B.

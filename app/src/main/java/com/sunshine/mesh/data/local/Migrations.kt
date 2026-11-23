@@ -75,3 +75,32 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * Stage 3 -> Stage 4. Adds the store-and-forward table for packets addressed
+ * to us that we cannot open yet. Existing tables are untouched.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `pending_packets` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `sender_id` TEXT NOT NULL,
+                `payload` BLOB NOT NULL,
+                `created_at` INTEGER NOT NULL,
+                `expires_at` INTEGER NOT NULL,
+                `next_retry_at` INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_pending_packets_expires_at` " +
+                "ON `pending_packets` (`expires_at`)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_pending_packets_next_retry_at` " +
+                "ON `pending_packets` (`next_retry_at`)",
+        )
+    }
+}

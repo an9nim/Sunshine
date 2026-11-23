@@ -13,6 +13,9 @@ interface Transport : Closeable {
 
     val state: StateFlow<TransportState>
 
+    /** Currently linked peers; the mesh layer floods to everyone except the source. */
+    val peers: StateFlow<Set<PeerId>>
+
     val incoming: Flow<InboundPacket>
 
     fun start()
@@ -72,6 +75,11 @@ enum class TransportError {
     PACKET_TOO_LARGE,
     BUFFER_OVERFLOW,
     INTERNAL,
+    // Appended for Stage 4; existing ordinals above are wire-stable.
+    WIFI_UNAVAILABLE,
+    WIFI_DISABLED,
+    WIFI_DISCOVERY_FAILED,
+    WIFI_GROUP_FAILED,
 }
 
 class TransportException(

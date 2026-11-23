@@ -110,4 +110,27 @@ class MeshPermissionsTest {
         assertTrue(Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE in permissions)
         assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
     }
+
+    @Test
+    fun api24WifiDirectUsesFineLocation() {
+        assertEquals(
+            listOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+            MeshPermissions.wifiDirectPermissions(24),
+        )
+        assertEquals(
+            MeshPermissions.wifiDirectPermissions(24),
+            MeshPermissions.wifiDirectPermissions(32),
+        )
+    }
+
+    @Test
+    fun api33WifiDirectUsesNearbyDevicesWithoutLocation() {
+        assertEquals(
+            listOf(Manifest.permission.NEARBY_WIFI_DEVICES),
+            MeshPermissions.wifiDirectPermissions(33),
+        )
+    }
 }

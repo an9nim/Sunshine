@@ -148,7 +148,9 @@ class BlePacketAssemblerTest {
         assertNull(assembler.accept(chunk(0, 2, ByteArray(508) { 1 })))
 
         assertProtocolError {
-            assembler.accept(chunk(1, 2, ByteArray(16) { 2 }))
+            assembler.accept(
+                chunk(1, 2, ByteArray(BleProtocol.MAX_PACKET_BYTES - 508 + 1) { 2 }),
+            )
         }
     }
 

@@ -162,6 +162,24 @@ class BleTransportTest {
     }
 
     @Test
+    fun peersFlowTracksEstablishedLinks() = runBlocking {
+        val fixture = Fixture(local, this)
+        try {
+            fixture.transport.start()
+            fixture.scanner.eventsChannel.tryScanFound(remote)
+            fixture.transport.state.first {
+                it is TransportState.Running && it.connectedPeers == 1
+            }
+            assertEquals(setOf(remote), fixture.transport.peers.value)
+
+            fixture.transport.close()
+            assertEquals(emptySet<PeerId>(), fixture.transport.peers.value)
+        } finally {
+            fixture.transport.close()
+        }
+    }
+
+    @Test
     fun closeReleasesResourcesAndSetsClosed() = runBlocking {
         val fixture = Fixture(local, this)
         fixture.transport.start()

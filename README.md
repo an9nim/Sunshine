@@ -4,12 +4,12 @@ Mesh-мессенджер для Android: сообщения передаютс�
 
 > **До использования:** MVP работает по модели TOFU, без forward secrecy и без подписей отправителя. Подробности и остальные ограничения — ниже.
 
-## Статус: Stage 3 (BLE-транспорт) завершён
+## Статус: Stage 4 (Wi-Fi Direct и Mesh-логика) завершён
 
 Сделано:
 
 - каркас проекта на Kotlin, Compose Material 3, тёмная тема;
-- Room v2: `peers`, `messages`, `seen_ids`, поля доверия, индексы, экспорт схемы, миграция 1→2;
+- Room v3: `peers`, `messages`, `seen_ids`, `pending_packets`, поля доверия, индексы, экспорт схемы, миграции 1→2→3;
 - генерация X25519 identity, `peerId = SHA-256(publicKey)[0..8]`;
 - шифрование приватного ключа ключом Android Keystore и хранение в Preferences DataStore;
 - онбординг с ником и экран профиля с отпечатком ключа;
@@ -24,19 +24,23 @@ Mesh-мессенджер для Android: сообщения передаютс�
 - роль по peerId: меньший подключается (central), больший принимает (peripheral); лимит 4 линка;
 - INDICATE с подтверждением `onNotificationSent`, per-connection Mutex, MTU fallback 23, проверка версии HELLO/HELLO_ACK;
 - `TransportService` (foreground service `connectedDevice`) и фабрика транспорта в `AppGraph`;
-- 205 unit-тестов в 29 suites, BUILD SUCCESSFUL.
+- Wi-Fi Direct транспорт: DNS-SD обмен peerId/портом, роли GO/клиент по peerId, TCP с length-prefix 4 байта и handshake 8 байт, таймауты 10 с, принудительный `removeGroup` при close;
+- Mesh-логика: заголовок 34 байта (version, hop-TTL, msgId, senderId, recipientId) поверх конверта 512 байт (пакет 546 байт), flooding всем линкам кроме источника, дедупликация LRU 4096 по (msgId, partIndex), store-and-forward на 72 часа с удалением истёкших без попытки расшифровки;
+- 244 unit-теста в 34 suites, BUILD SUCCESSFUL.
 
 **Важно:** E2E-ядро и BLE-транспорт готовы, но сообщения между устройствами пока не передаются end-to-end: связка E2E ↔ Transport появится в Stage 5, экраны — в Stage 6. Транспорт доставляет только непрозрачные 512-байтные пакеты и не знает о содержимом конвертов.
 
-### BLE-транспорт: покрытие тестами
+### Транспорты: покрытие тестами
 
 Код BLE-транспорта покрыт unit-тестами с fake-объектами. Проверка на реальных устройствах (GATT-сервер, реклама, сканирование) запланирована на Stage 6 после появления UI.
 
-### Следующий этап: Stage 4 (Wi-Fi Direct и Mesh-логика)
+Wi-Fi Direct покрыт unit-тестами с fake discovery/group manager и loopback-сокетами. Проверка на реальных устройствах (формирование группы, DNS-SD, роуминг между GO и клиентами) также запланирована на Stage 6.
 
-- Wi-Fi Direct транспорт поверх того же интерфейса `Transport` (send/incoming/close).
-- Mesh-логика: flooding, TTL, дедупликация по `msgId`.
-- Store-and-forward только для собственных исходящих пакетов.
+### Следующий этап: Stage 5 (Интеграция)
+
+- `MeshEngine` поверх обоих транспортов: связка E2E ↔ Transport ↔ Room.
+- Обработка локальной доставки (`MeshPacketHandler`), доверие и outbox исходящих.
+- Запуск транспортов из сервиса/фабрик `AppGraph`.
 
 ### План этапов
 
@@ -45,8 +49,8 @@ Mesh-мессенджер для Android: сообщения передаютс�
 | Stage 1 | Скелет проекта, Room, Identity | Сделано |
 | Stage 2 | E2E-шифрование, фрагментация, TOFU | Сделано |
 | Stage 3 | BLE-транспорт | Сделано |
-| Stage 4 | Wi-Fi Direct транспорт и Mesh-логика (flooding, TTL, store-and-forward) | Следующий |
-| Stage 5 | Интеграция (MeshEngine, связка E2E + Transport + Room) | |
+| Stage 4 | Wi-Fi Direct транспорт и Mesh-логика (flooding, TTL, store-and-forward) | Сделано |
+| Stage 5 | Интеграция (MeshEngine, связка E2E + Transport + Room) | Следующий |
 | Stage 6 | UI/UX (экраны чатов, профиля, сети), проверка BLE на реальных устройствах | |
 | Stage 7 | Оптимизация, Foreground Service, релиз | |
 
@@ -180,7 +184,7 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 - **`peerId` — это label, а не доказательство ключа.** Восемь байт используются только для поиска пира в локальной БД. Они не доказывают, что публичный ключ хешируется в этот `peerId`. Защита от подмены ключа — `KEY_CHANGED` и ручная сверка Safety Number.
 - **Нет forward secrecy.** Ключи X25519 долгоживущие. Компрометация статического приватного ключа и записанного трафика раскрывает переписку, включая старые сообщения.
 - **Нет подписей отправителя.** Сообщение защищено парным ключом AES-GCM, но третьей стороне нечем доказать авторство. Ник не подтверждён криптографически. Подмена ключа при первом контакте возможна.
-- **Store-and-forward только для своих исходящих.** Узел хранит пакеты только собственных исходящих сообщений. Чужие пакеты не сохраняются: если получатель недоступен, отправитель повторяет попытку, пока сообщение не доставлено или не истечёт TTL.
+- **Store-and-forward ограничен.** Пакеты, адресованные мне, которые я пока не могу расшифровать (нет ключа пира или ожидает доверия), хранятся в `pending_packets` до 72 часов; по истечении срока удаляются без повторной попытки расшифровки. Чужие транзитные пакеты не сохраняются. Хранение собственных исходящих появится в Stage 5.
 - **Метаданные видны.** Радиососеди и реле видят `peerId` отправителя и получателя, размер, время и TTL пакета, а также `totalParts`. Содержимое зашифровано.
 - **Реле не доверенное.** Любой узел может отбросить, задержать или переслать пакет. Дедупликация не даёт повторно обработать один `msgId`, но не гарантирует доставку.
 - **Нет восстановления профиля.** Потеря устройства означает потерю ключа и истории. Резервного копирования нет.
@@ -211,6 +215,7 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 - API 24–32: `ACCESS_FINE_LOCATION` и `ACCESS_COARSE_LOCATION` запрашиваются в runtime парой (в манифесте ограничены `maxSdkVersion="32"`): Android 12+ требует оба разрешения.
 - API 31+: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` и `BLUETOOTH_ADVERTISE`; для сканирования указан `neverForLocation`.
 - API 33+: `NEARBY_WIFI_DEVICES` с `neverForLocation`, `POST_NOTIFICATIONS` для уведомления сервиса.
+- Wi-Fi Direct использует те же разрешения, что и поиск: FINE_LOCATION на API 24–32 (плюс включённая геолокация), `NEARBY_WIFI_DEVICES` на 33+.
 - API 34+: `FOREGROUND_SERVICE_CONNECTED_DEVICE` для foreground service типа `connectedDevice`.
 - Кнопка запроса находится на экране профиля; без разрешений поиск устройств не запускается.
 - `TransportService` объявлен в манифесте с `foregroundServiceType="connectedDevice"` и `exported="false"`.
@@ -225,7 +230,7 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 
 Gradle wrapper включён в репозиторий.
 
-205 unit-тестов в 29 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519, BLE-таймаут, кодек кадров, сборщик пакетов, рекламу, GATT-линки и `BleTransport`. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
+244 unit-теста в 34 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519, BLE-таймаут, кодек кадров, сборщик пакетов, рекламу, GATT-линки, `BleTransport`, mesh-заголовок, LRU-дедупликацию, `MeshEngine`, Wi-Fi Direct framing и `WifiDirectTransport`. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
 
 Инструментальный тест миграции `migration1To2KeepsDataAndResetsTrust` ранее прошёл на реальном устройстве. В Шаге 5 он не перезапускался: изменения его не затрагивают.
 
@@ -239,7 +244,10 @@ app/src/main/java/com/sunshine/mesh/
   core/net/          таймаут соединения, политика mesh
   core/permissions/  runtime-разрешения
   core/transport/    Transport, BLE codec/assembler, GATT, links, BleTransport
+  core/transport/wifidirect/  DNS-SD, группы, TCP framing, WifiDirectTransport
+  core/mesh/         MeshHeader, SeenCache, MeshEngine, MeshStore
   data/local/        Room: entity, dao, database, migrations
+  data/mesh/         RoomMeshStore (store-and-forward)
   data/peer/         PeerRepository, PeerTrustGate, trust store
   data/profile/      DataStore и репозиторий профиля
   domain/message/    FragmentAssembler

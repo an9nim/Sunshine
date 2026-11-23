@@ -137,7 +137,7 @@ class BleFrameCodecTest {
             BleFrameCodec.encodeData(ByteArray(0), 23, transferId = 0)
         }
         val tooLarge = assertThrows(TransportException::class.java) {
-            BleFrameCodec.encodeData(ByteArray(513), 23, transferId = 0)
+            BleFrameCodec.encodeData(ByteArray(BleProtocol.MAX_PACKET_BYTES + 1), 23, transferId = 0)
         }
         assertEquals(TransportError.PACKET_TOO_LARGE, tooLarge.code)
     }
@@ -157,7 +157,7 @@ class BleFrameCodecTest {
             BleFrameCodec.chunkCount(0, 23)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            BleFrameCodec.chunkCount(513, 23)
+            BleFrameCodec.chunkCount(BleProtocol.MAX_PACKET_BYTES + 1, 23)
         }
     }
 
