@@ -737,12 +737,19 @@ class MeshCoordinator(
     }
 
     private suspend fun encryptToOutbox(record: MessageRecord): EncryptedOutbox {
+        val mesh = sender ?: return EncryptedOutbox.NoSession
         val envelopes = withSession(record.peerId) { session ->
             session.seal(EnvelopeType.TEXT, record.msgId, record.body)
         } ?: return EncryptedOutbox.NoSession
 
+        // MessageEntity.packet stores complete 546-byte mesh packets: retries
+        // must reuse the exact header and envelope, not just the envelope.
+        val packets = ArrayList<ByteArray>(envelopes.size)
         try {
-            val encoded = OutboxCodec.encode(envelopes)
+            for (envelope in envelopes) {
+                packets += mesh.wrap(envelope, record.peerId, record.msgId)
+            }
+            val encoded = OutboxCodec.encode(packets)
             val updated = try {
                 messageStore.updatePacket(record.msgId, encoded)
             } catch (error: CancellationException) {
@@ -756,6 +763,7 @@ class MeshCoordinator(
             }
             return EncryptedOutbox.Ready(encoded)
         } finally {
+            packets.forEach { it.fill(0) }
             envelopes.forEach { it.fill(0) }
         }
     }
