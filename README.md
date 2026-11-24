@@ -4,7 +4,7 @@ Mesh-мессенджер для Android: сообщения передаютс�
 
 > **До использования:** MVP работает по модели TOFU, без forward secrecy и без подписей отправителя. Подробности и остальные ограничения — ниже.
 
-## Статус: Stage 4 (Wi-Fi Direct и Mesh-логика) завершён
+## Статус: Stage 5 (Интеграция) завершён
 
 Сделано:
 
@@ -26,9 +26,12 @@ Mesh-мессенджер для Android: сообщения передаютс�
 - `TransportService` (foreground service `connectedDevice`) и фабрика транспорта в `AppGraph`;
 - Wi-Fi Direct транспорт: DNS-SD обмен peerId/портом, роли GO/клиент по peerId, TCP с length-prefix 4 байта и handshake 8 байт, таймауты 10 с, принудительный `removeGroup` при close;
 - Mesh-логика: заголовок 34 байта (version, hop-TTL, msgId, senderId, recipientId) поверх конверта 512 байт (пакет 546 байт), flooding всем линкам кроме источника, дедупликация LRU 4096 по (msgId, partIndex), store-and-forward на 72 часа с удалением истёкших без попытки расшифровки;
-- 244 unit-теста в 34 suites, BUILD SUCCESSFUL.
+- Stage 5: `MeshCoordinator` связывает E2E, доверие, Room и mesh: `KEY_EXCHANGE` обрабатывается до расшифровки, сессии кэшируются по `PeerId` под `Mutex`, входящие `TEXT`/`RECEIPT` сохраняются, Safety Number и `KEY_CHANGED` отдаются событиями;
+- исходящий outbox: сообщение сохраняется как `PENDING` до шифрования, готовые 546-байтные пакеты лежат в `messages.packet`, отправка повторяется при появлении линка и после `acceptTrust`; статусы `PENDING → SENT → DELIVERED`;
+- `TransportHub` объединяет BLE и Wi-Fi Direct; `TransportService` запускает оба транспорта, `MeshEngine` и `MeshCoordinator` через `AppGraph`;
+- 252 unit-теста в 35 suites, BUILD SUCCESSFUL.
 
-**Важно:** E2E-ядро и BLE-транспорт готовы, но сообщения между устройствами пока не передаются end-to-end: связка E2E ↔ Transport появится в Stage 5, экраны — в Stage 6. Транспорт доставляет только непрозрачные 512-байтные пакеты и не знает о содержимом конвертов.
+**Важно:** сообщения теперь передаются end-to-end через оба транспорта, но экранов чатов ещё нет — они появятся в Stage 6. `DELIVERED` работает best-effort: квитанции не персистятся и не повторяются, поэтому при потере квитанции статус может остаться `SENT`. `KEY_CHANGED` уже обнаруживается и показывается событием, но новый ключ автоматически не принимается — это Stage 6.
 
 ### Транспорты: покрытие тестами
 
@@ -36,11 +39,12 @@ Mesh-мессенджер для Android: сообщения передаютс�
 
 Wi-Fi Direct покрыт unit-тестами с fake discovery/group manager и loopback-сокетами. Проверка на реальных устройствах (формирование группы, DNS-SD, роуминг между GO и клиентами) также запланирована на Stage 6.
 
-### Следующий этап: Stage 5 (Интеграция)
+### Следующий этап: Stage 6 (UI/UX)
 
-- `MeshEngine` поверх обоих транспортов: связка E2E ↔ Transport ↔ Room.
-- Обработка локальной доставки (`MeshPacketHandler`), доверие и outbox исходящих.
-- Запуск транспортов из сервиса/фабрик `AppGraph`.
+- Экраны чатов, профиля, списка пиров и состояния сети.
+- Подтверждение TOFU по Safety Number и обработка `KEY_CHANGED` с возможностью принять новый ключ.
+- Отображение статусов `PENDING/SENT/DELIVERED/FAILED` и событий `MeshEvent`.
+- Проверка BLE и Wi-Fi Direct на реальных устройствах.
 
 ### План этапов
 
@@ -50,11 +54,11 @@ Wi-Fi Direct покрыт unit-тестами с fake discovery/group manager и
 | Stage 2 | E2E-шифрование, фрагментация, TOFU | Сделано |
 | Stage 3 | BLE-транспорт | Сделано |
 | Stage 4 | Wi-Fi Direct транспорт и Mesh-логика (flooding, TTL, store-and-forward) | Сделано |
-| Stage 5 | Интеграция (MeshEngine, связка E2E + Transport + Room) | Следующий |
-| Stage 6 | UI/UX (экраны чатов, профиля, сети), проверка BLE на реальных устройствах | |
+| Stage 5 | Интеграция (MeshCoordinator, E2E + Transport + Room, outbox, квитанции) | Сделано |
+| Stage 6 | UI/UX (экраны чатов, профиля, сети), проверка BLE на реальных устройствах | Следующий |
 | Stage 7 | Оптимизация, Foreground Service, релиз | |
 
-Каркас `TransportService` уже существует с Stage 3; финальная доработка сервиса — Stage 7.
+`TransportService` уже запускает оба транспорта, `MeshEngine` и `MeshCoordinator`; в Stage 7 останутся оптимизация, устойчивость и релизная доводка.
 
 Таймаут BLE-соединения 10 секунд реализован в `core/net` и в сборщике пакетов.
 
@@ -184,7 +188,9 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 - **`peerId` — это label, а не доказательство ключа.** Восемь байт используются только для поиска пира в локальной БД. Они не доказывают, что публичный ключ хешируется в этот `peerId`. Защита от подмены ключа — `KEY_CHANGED` и ручная сверка Safety Number.
 - **Нет forward secrecy.** Ключи X25519 долгоживущие. Компрометация статического приватного ключа и записанного трафика раскрывает переписку, включая старые сообщения.
 - **Нет подписей отправителя.** Сообщение защищено парным ключом AES-GCM, но третьей стороне нечем доказать авторство. Ник не подтверждён криптографически. Подмена ключа при первом контакте возможна.
-- **Store-and-forward ограничен.** Пакеты, адресованные мне, которые я пока не могу расшифровать (нет ключа пира или ожидает доверия), хранятся в `pending_packets` до 72 часов; по истечении срока удаляются без повторной попытки расшифровки. Чужие транзитные пакеты не сохраняются. Хранение собственных исходящих появится в Stage 5.
+- **Store-and-forward ограничен.** Пакеты, адресованные мне, которые я пока не могу расшифровать (нет ключа пира или ожидает доверия), хранятся в `pending_packets` до 72 часов; по истечении срока удаляются без повторной попытки расшифровки. Чужие транзитные пакеты не сохраняются. Собственные исходящие хранятся в `messages.packet` и повторяются при появлении линка.
+- **`DELIVERED` — best-effort.** Квитанции не персистятся и не ставятся в очередь повторной отправки. Если квитанция потерялась, сообщение останется в `SENT`; доставка не гарантируется.
+- **`KEY_CHANGED` пока не принимается.** Coordinator обнаруживает смену ключа и отдаёт событие с новым Safety Number, но принять новый ключ можно будет только после появления UI в Stage 6.
 - **Метаданные видны.** Радиососеди и реле видят `peerId` отправителя и получателя, размер, время и TTL пакета, а также `totalParts`. Содержимое зашифровано.
 - **Реле не доверенное.** Любой узел может отбросить, задержать или переслать пакет. Дедупликация не даёт повторно обработать один `msgId`, но не гарантирует доставку.
 - **Нет восстановления профиля.** Потеря устройства означает потерю ключа и истории. Резервного копирования нет.
@@ -230,7 +236,7 @@ TTL в AAD не входит: реле должны уметь уменьшат�
 
 Gradle wrapper включён в репозиторий.
 
-244 unit-теста в 34 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519, BLE-таймаут, кодек кадров, сборщик пакетов, рекламу, GATT-линки, `BleTransport`, mesh-заголовок, LRU-дедупликацию, `MeshEngine`, Wi-Fi Direct framing и `WifiDirectTransport`. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
+252 unit-теста в 35 suites покрывают E2E, доверие, Room, runtime-разрешения, ник, `peerId`, X25519, BLE-таймаут, кодек кадров, сборщик пакетов, рекламу, GATT-линки, `BleTransport`, mesh-заголовок, LRU-дедупликацию, `MeshEngine`, Wi-Fi Direct framing, `WifiDirectTransport`, `TransportHub`, outbox и `MeshCoordinator`. Room-схема экспортируется в `app/schemas/`; `lintDebug` проходит без ошибок.
 
 Инструментальный тест миграции `migration1To2KeepsDataAndResetsTrust` ранее прошёл на реальном устройстве. В Шаге 5 он не перезапускался: изменения его не затрагивают.
 
@@ -239,17 +245,19 @@ Gradle wrapper включён в репозиторий.
 ```
 app/src/main/java/com/sunshine/mesh/
   core/crypto/       X25519, Keystore-обёртка, SafetyNumber, PublicKeyOrder
-  core/crypto/e2e/   HKDF-сессия, конверт, AES-GCM, E2ESession
+  core/crypto/e2e/   HKDF-сессия, конверт, AES-GCM, E2ESession, KeyExchangeCodec, ReceiptPayload
   core/ids/          PeerId, MessageId
   core/net/          таймаут соединения, политика mesh
   core/permissions/  runtime-разрешения
-  core/transport/    Transport, BLE codec/assembler, GATT, links, BleTransport
+  core/transport/    Transport, TransportHub, BLE codec/assembler, GATT, links, BleTransport
   core/transport/wifidirect/  DNS-SD, группы, TCP framing, WifiDirectTransport
-  core/mesh/         MeshHeader, SeenCache, MeshEngine, MeshStore
+  core/mesh/         MeshHeader, SeenCache, MeshEngine, MeshStore, OutboxCodec
+  coordinator/       MeshCoordinator, MeshEvent, SendTextResult, фабрика
   data/local/        Room: entity, dao, database, migrations
   data/mesh/         RoomMeshStore (store-and-forward)
-  data/peer/         PeerRepository, PeerTrustGate, trust store
-  data/profile/      DataStore и репозиторий профиля
+  data/message/      MessageStore, RoomMessageStore (история и outbox)
+  data/peer/         PeerRepository, PeerTrustGate, PeerKeyStore
+  data/profile/      DataStore, ProfileRepository, IdentityRepository
   domain/message/    FragmentAssembler
   domain/model/      Profile, TrustState, направления и статусы сообщений
   domain/validation/ Nickname
