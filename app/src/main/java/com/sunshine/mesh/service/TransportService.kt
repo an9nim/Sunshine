@@ -15,6 +15,7 @@ import com.sunshine.mesh.SunshineApp
 import com.sunshine.mesh.coordinator.MeshCoordinator
 import com.sunshine.mesh.core.mesh.MeshEngine
 import com.sunshine.mesh.core.mesh.SeenCache
+import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportException
 import com.sunshine.mesh.core.transport.TransportHub
 import com.sunshine.mesh.core.transport.TransportState
@@ -46,6 +47,9 @@ class TransportService : Service() {
     private val mutableCoordinator = MutableStateFlow<MeshCoordinator?>(null)
     val coordinator: StateFlow<MeshCoordinator?> = mutableCoordinator.asStateFlow()
 
+    private val mutableStartError = MutableStateFlow<TransportError?>(null)
+    val startError: StateFlow<TransportError?> = mutableStartError.asStateFlow()
+
     private var starting = false
 
     inner class LocalBinder : Binder() {
@@ -64,6 +68,7 @@ class TransportService : Service() {
             startForegroundCompat()
         } catch (error: Exception) {
             Timber.w("Foreground service start rejected")
+            mutableStartError.value = TransportError.FOREGROUND_SERVICE_DENIED
             stopSelf()
             return START_NOT_STICKY
         }
@@ -88,6 +93,7 @@ class TransportService : Service() {
     private suspend fun startMesh() {
         var hub: TransportHub? = null
         var coordinator: MeshCoordinator? = null
+        mutableStartError.value = null
         try {
             val graph = (application as SunshineApp).graph
             val ble = graph.bleTransportFactory.create(serviceScope)
@@ -121,11 +127,17 @@ class TransportService : Service() {
             }
         } catch (error: TransportException) {
             Timber.w("Transport service failed to start: code=%s", error.code)
+            mutableStartError.value = error.code
+            mutableCoordinator.value = null
+            mutableHub.value = null
             coordinator?.close()
             hub?.close()
             stopSelf()
         } catch (error: Exception) {
             Timber.w("Transport service failed to start")
+            mutableStartError.value = TransportError.INTERNAL
+            mutableCoordinator.value = null
+            mutableHub.value = null
             coordinator?.close()
             hub?.close()
             stopSelf()

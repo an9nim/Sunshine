@@ -47,6 +47,22 @@ class TransportHub(
             initialValue = emptySet(),
         )
 
+    /** Per-peer view of which radios currently have a link. */
+    val links: StateFlow<Map<PeerId, Set<TransportKind>>> =
+        combine(transports.map { it.peers }) { sets ->
+            val result = mutableMapOf<PeerId, Set<TransportKind>>()
+            transports.forEachIndexed { index, transport ->
+                for (peerId in sets[index]) {
+                    result[peerId] = result[peerId].orEmpty() + transport.kind
+                }
+            }
+            result
+        }.stateIn(
+            scope = hubScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap(),
+        )
+
     override val state: StateFlow<TransportState> =
         combine(
             combine(transports.map { it.state }) { states -> states.toList() },

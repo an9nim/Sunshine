@@ -19,8 +19,25 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(message: MessageEntity): Long
 
-    @Query("SELECT * FROM messages WHERE peer_id = :peerId ORDER BY created_at ASC")
+    @Query(
+        "SELECT * FROM messages WHERE peer_id = :peerId " +
+            "ORDER BY created_at ASC, message_id ASC",
+    )
     fun observeConversation(peerId: String): Flow<List<MessageEntity>>
+
+    /**
+     * Latest message per peer for the chat list. A correlated subquery keeps
+     * the index on (peer_id, created_at) usable and works on API 24 SQLite.
+     */
+    @Query(
+        "SELECT m.* FROM messages AS m " +
+            "WHERE m.message_id = (" +
+            "SELECT m2.message_id FROM messages AS m2 " +
+            "WHERE m2.peer_id = m.peer_id " +
+            "ORDER BY m2.created_at DESC, m2.message_id DESC LIMIT 1" +
+            ") ORDER BY m.created_at DESC",
+    )
+    fun observeLatestPerPeer(): Flow<List<MessageEntity>>
 
     @Query(
         "SELECT * FROM messages WHERE direction = :direction AND status = :status " +

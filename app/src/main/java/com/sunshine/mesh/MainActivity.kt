@@ -22,9 +22,10 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        val graph = (application as SunshineApp).graph
         setContent {
             SunshineTheme {
-                MainScreen(viewModel)
+                MainScreen(viewModel = viewModel, graph = graph)
             }
         }
     }

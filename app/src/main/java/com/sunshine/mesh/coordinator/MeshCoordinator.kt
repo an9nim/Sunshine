@@ -77,7 +77,7 @@ class MeshCoordinator(
     private val now: () -> Long = System::currentTimeMillis,
     private val random: SecureRandom = SecureRandom(),
     private val retryIntervalMs: Long = MeshPolicy.RETRY_INTERVAL_MS,
-) : MeshPacketHandler, Closeable {
+) : MeshPacketHandler, Closeable, ChatTransport, TrustAcceptor {
 
     val localPeerId: PeerId = identity.peerId
 
@@ -101,7 +101,7 @@ class MeshCoordinator(
     private var started = false
     private var sender: MeshSender? = null
 
-    val events: SharedFlow<MeshEvent> = eventsBuffer.asSharedFlow()
+    override val events: SharedFlow<MeshEvent> = eventsBuffer.asSharedFlow()
 
     /**
      * Wires the outbound mesh facade. Called once because MeshEngine and the
@@ -200,7 +200,7 @@ class MeshCoordinator(
      * A missing peer key or pending trust is not an error: the row stays
      * PENDING and the outbox retry loop picks it up after the handshake.
      */
-    suspend fun sendText(peerId: PeerId, text: String): SendTextResult {
+    override suspend fun sendText(peerId: PeerId, text: String): SendTextResult {
         if (closed) return SendTextResult.Failed(null, SendError.INTERNAL)
         if (sender == null) return SendTextResult.Failed(null, SendError.INTERNAL)
 
@@ -277,7 +277,7 @@ class MeshCoordinator(
      * closed before a new one is derived, then stored inbound packets and the
      * outbox are woken.
      */
-    suspend fun acceptTrust(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
+    override suspend fun acceptTrust(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
         if (closed) return false
         val key = expectedPublicKey.copyOf()
         try {

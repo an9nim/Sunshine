@@ -13,10 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -25,7 +22,12 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.sunshine.mesh.R
 import com.sunshine.mesh.domain.validation.NicknameError
+import com.sunshine.mesh.ui.components.AmberButton
+import com.sunshine.mesh.ui.components.AmberText
+import com.sunshine.mesh.ui.components.AmberTextField
 import com.sunshine.mesh.ui.main.OnboardingForm
+import com.sunshine.mesh.ui.theme.AmberMutedForeground
+import com.sunshine.mesh.ui.theme.AmberPrimary
 
 @Composable
 fun OnboardingScreen(
@@ -41,40 +43,41 @@ fun OnboardingScreen(
             .systemBarsPadding()
             .imePadding()
             .padding(horizontal = 24.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
+        AmberText(
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary,
+            color = AmberPrimary,
         )
-        Text(
+        AmberText(
             text = stringResource(R.string.onboarding_tagline),
             style = MaterialTheme.typography.headlineMedium,
         )
-        Text(
+        AmberText(
             text = stringResource(R.string.onboarding_description),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = AmberMutedForeground,
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
-        OutlinedTextField(
+        AmberText(
+            text = stringResource(R.string.nickname_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = AmberMutedForeground,
+        )
+        AmberTextField(
             value = form.nickname,
             onValueChange = onNicknameChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.nickname_label)) },
-            placeholder = { Text(stringResource(R.string.nickname_hint)) },
-            singleLine = true,
+            placeholder = stringResource(R.string.nickname_hint),
             isError = form.nicknameError != null || form.submitFailed,
-            supportingText = {
-                val error = form.nicknameError
-                if (error != null) {
-                    Text(stringResource(error.messageRes()))
-                } else if (form.submitFailed) {
-                    Text(stringResource(R.string.profile_create_error))
-                }
+            errorText = when {
+                form.nicknameError != null ->
+                    stringResource(form.nicknameError.messageRes())
+
+                form.submitFailed -> stringResource(R.string.profile_create_error)
+                else -> null
             },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Words,
@@ -83,28 +86,25 @@ fun OnboardingScreen(
             keyboardActions = KeyboardActions(onDone = { onCreateProfile() }),
         )
 
-        Button(
+        AmberButton(
+            text = stringResource(
+                if (form.isSubmitting) {
+                    R.string.onboarding_action_busy
+                } else {
+                    R.string.onboarding_action
+                },
+            ),
             onClick = onCreateProfile,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .padding(top = 8.dp),
             enabled = !form.isSubmitting,
-        ) {
-            Text(
-                stringResource(
-                    if (form.isSubmitting) {
-                        R.string.onboarding_action_busy
-                    } else {
-                        R.string.onboarding_action
-                    },
-                ),
-            )
-        }
+        )
 
-        Text(
+        AmberText(
             text = stringResource(R.string.onboarding_footnote),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            color = AmberMutedForeground,
         )
     }
 }

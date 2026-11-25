@@ -23,11 +23,38 @@ class ProfileRepository(
     private val store: ProfileStore,
     private val secret: KeystoreSecret,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
+) : ProfileDataSource {
 
     suspend fun loadProfile(): Profile? = withContext(ioDispatcher) {
         store.readProfile()
     }
+
+    override suspend fun loadOwnProfile(): OwnProfile? = withContext(ioDispatcher) {
+        store.readStoredProfile()?.let { stored ->
+            OwnProfile(
+                profile = stored.profile,
+                publicKey = stored.publicKey.copyOf(),
+            )
+        }
+    }
+
+    override suspend fun updateNickname(nicknameInput: String): UpdateNicknameResult =
+        withContext(ioDispatcher) {
+            try {
+                when (val nickname = Nickname.normalize(nicknameInput)) {
+                    is NicknameResult.Invalid ->
+                        UpdateNicknameResult.InvalidNickname(nickname.reason)
+                    is NicknameResult.Ok ->
+                        store.updateNickname(nickname.value)
+                            ?.let(UpdateNicknameResult::Updated)
+                            ?: UpdateNicknameResult.MissingProfile
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                UpdateNicknameResult.Failed(exception)
+            }
+        }
 
     suspend fun createProfile(nicknameInput: String): CreateProfileResult =
         withContext(ioDispatcher) {

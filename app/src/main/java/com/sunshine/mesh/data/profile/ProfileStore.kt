@@ -69,6 +69,22 @@ class ProfileStore(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    /** Changes only the nickname; keys and creation time are left untouched. */
+    suspend fun updateNickname(nickname: String): Profile? {
+        var updated: Profile? = null
+        dataStore.edit { preferences ->
+            val peerId = preferences[Keys.PEER_ID] ?: return@edit
+            val createdAt = preferences[Keys.CREATED_AT] ?: return@edit
+            preferences[Keys.NICKNAME] = nickname
+            updated = Profile(
+                peerId = PeerId.parse(peerId),
+                nickname = nickname,
+                createdAt = createdAt,
+            )
+        }
+        return updated
+    }
+
     private object Keys {
         val NICKNAME = stringPreferencesKey("nickname")
         val PEER_ID = stringPreferencesKey("peer_id")

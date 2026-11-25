@@ -5,6 +5,7 @@ import com.sunshine.mesh.core.transport.InboundPacket
 import com.sunshine.mesh.core.transport.Transport
 import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportException
+import com.sunshine.mesh.core.transport.TransportKind
 import com.sunshine.mesh.core.transport.TransportState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +50,8 @@ class BleTransport(
 
     private val mutablePeers = MutableStateFlow<Set<PeerId>>(emptySet())
     override val peers: StateFlow<Set<PeerId>> = mutablePeers.asStateFlow()
+
+    override val kind: TransportKind = TransportKind.BLE
 
     private val incomingChannel = Channel<InboundPacket>(capacity = INCOMING_QUEUE_CAPACITY)
     override val incoming: Flow<InboundPacket> = incomingChannel.receiveAsFlow()

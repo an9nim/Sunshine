@@ -26,7 +26,7 @@ class PeerRepository(
     private val peerDao: PeerDao,
     private val transactions: PeerTransactions,
     private val now: () -> Long = System::currentTimeMillis,
-) : PeerTrustStore, PeerKeyStore {
+) : PeerTrustStore, PeerKeyStore, PeerTrustActions {
 
     override suspend fun checkAndUpdateKey(
         peerId: PeerId,
@@ -94,7 +94,7 @@ class PeerRepository(
     }
 
     /** Marks the displayed key as manually compared, out of band. */
-    suspend fun verifyManually(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
+    override suspend fun verifyManually(peerId: PeerId, expectedPublicKey: ByteArray): Boolean {
         requireMatchingKey(expectedPublicKey)
 
         return transactions.run {
@@ -122,7 +122,7 @@ class PeerRepository(
     fun observePeer(peerId: PeerId): Flow<Peer?> =
         peerDao.observe(peerId.value).map { it?.toDomain() }
 
-    fun observeAll(): Flow<List<Peer>> =
+    override fun observeAll(): Flow<List<Peer>> =
         peerDao.observeAll().map { entities -> entities.map { it.toDomain() } }
 
     suspend fun updateNickname(peerId: PeerId, nickname: String): Boolean {

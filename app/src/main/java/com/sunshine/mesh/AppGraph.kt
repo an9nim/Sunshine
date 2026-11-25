@@ -7,6 +7,7 @@ import com.sunshine.mesh.core.mesh.MeshStore
 import com.sunshine.mesh.core.transport.ble.BleTransportFactory
 import com.sunshine.mesh.core.transport.wifidirect.WifiDirectTransportFactory
 import com.sunshine.mesh.data.local.SunshineDatabase
+import com.sunshine.mesh.data.chat.ChatRepository
 import com.sunshine.mesh.data.mesh.RoomMeshStore
 import com.sunshine.mesh.data.message.MessageStore
 import com.sunshine.mesh.data.message.RoomMessageStore
@@ -18,6 +19,9 @@ import com.sunshine.mesh.data.profile.IdentityRepository
 import com.sunshine.mesh.data.profile.ProfileRepository
 import com.sunshine.mesh.data.profile.ProfileStore
 import com.sunshine.mesh.data.profile.createProfileStore
+import com.sunshine.mesh.data.update.GitHubUpdateClient
+import com.sunshine.mesh.data.update.UpdateClient
+import com.sunshine.mesh.service.TransportClient
 
 /**
  * Manual dependency graph: one application-scoped instance, no service locator.
@@ -63,6 +67,13 @@ class AppGraph(context: Context) {
         RoomMessageStore(database.messageDao())
     }
 
+    val chatRepository: ChatRepository by lazy {
+        ChatRepository(
+            peerRepository = peerRepository,
+            messageDao = database.messageDao(),
+        )
+    }
+
     val meshStore: MeshStore by lazy {
         RoomMeshStore(database.pendingPacketDao())
     }
@@ -82,6 +93,14 @@ class AppGraph(context: Context) {
 
     val bleTransportFactory: BleTransportFactory by lazy {
         BleTransportFactory(appContext, profileRepository)
+    }
+
+    val transportClient: TransportClient by lazy {
+        TransportClient(appContext)
+    }
+
+    val updateClient: UpdateClient by lazy {
+        GitHubUpdateClient()
     }
 
     val wifiDirectTransportFactory: WifiDirectTransportFactory by lazy {

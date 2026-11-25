@@ -5,11 +5,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
 
+/** Which radio carries a link. */
+enum class TransportKind {
+    BLE,
+    WIFI_DIRECT,
+    UNKNOWN,
+}
+
 /**
  * Opaque packet transport. Implementations never parse the payload: a packet
  * is either delivered whole or rejected. E2E and trust live above this layer.
  */
 interface Transport : Closeable {
+
+    /** Default keeps test transports source-compatible. */
+    val kind: TransportKind get() = TransportKind.UNKNOWN
 
     val state: StateFlow<TransportState>
 
