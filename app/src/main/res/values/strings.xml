@@ -113,14 +113,18 @@
     <string name="network_transport_ble">BLE</string>
     <string name="network_transport_wifi">Wi-Fi Direct</string>
     <string name="network_transport_unknown">Другой</string>
+    <string name="network_peer_write">Написать</string>
+    <string name="network_peer_connecting">Подключение…</string>
+    <string name="network_peer_connect_failed">Не удалось подключиться</string>
+    <string name="network_peer_retry">Повторить</string>
 
     <string name="help_subtitle">Mesh-сеть без интернета</string>
     <string name="help_separator">========================</string>
     <string name="help_intro_title">Как это работает</string>
     <string name="help_intro_body">Устройства рядом соединяются напрямую и передают сообщения по цепочке. Интернет и серверы не нужны.</string>
     <string name="help_ranges_title">Радиус связи</string>
-    <string name="help_range_ble">BLE ............ 10–30 м</string>
-    <string name="help_range_wifi">Wi-Fi Direct ... 50–100 м</string>
+    <string name="help_range_ble">BLE ············ 10–30 м</string>
+    <string name="help_range_wifi">Wi-Fi Direct ··· 50–100 м</string>
     <string name="help_ranges_hint">Стены и другие устройства уменьшают радиус.</string>
     <string name="help_connect_title">Как подключиться</string>
     <string name="help_connect_step_1">1. Подойдите ближе к другому устройству.</string>
@@ -170,5 +174,8 @@
     <string name="chat_notice_trust_required">Нужно подтвердить ключ собеседника.</string>
     <string name="chat_notice_key_changed">Ключ собеседника изменился.</string>
     <string name="chat_notice_no_link">Нет связи — сообщение уйдёт позже.</string>
+    <string name="chat_connecting">Подключение…</string>
+    <string name="chat_connect_failed">Не удалось подключиться</string>
+    <string name="chat_connect_retry">Повторить</string>
     <string name="chat_not_found">Чат не найден</string>
 </resources>

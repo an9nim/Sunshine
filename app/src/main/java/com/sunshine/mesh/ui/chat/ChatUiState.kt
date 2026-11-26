@@ -14,6 +14,8 @@ sealed interface ChatUiState {
         val sending: Boolean,
         val canSend: Boolean,
         val notice: ChatNotice?,
+        val connecting: Boolean = false,
+        val connectFailed: Boolean = false,
     ) : ChatUiState
 
     data object Failed : ChatUiState

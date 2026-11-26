@@ -206,7 +206,7 @@ private fun UpdateStatusCard(
                         )
                     }
 
-                    null -> Unit
+                    else -> Unit
                 }
             }
 

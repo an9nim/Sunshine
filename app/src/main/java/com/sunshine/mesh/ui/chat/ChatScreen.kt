@@ -68,6 +68,7 @@ fun ChatScreen(
     scrollEvents: Flow<Unit>,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    onRetryConnect: () -> Unit,
     onBack: () -> Unit,
     onNetworkClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -98,6 +99,14 @@ fun ChatScreen(
                 .height(1.dp)
                 .background(AmberBorder),
         )
+
+        if (state is ChatUiState.Ready && (state.connecting || state.connectFailed)) {
+            ConnectionBanner(
+                connecting = state.connecting,
+                failed = state.connectFailed,
+                onRetry = onRetryConnect,
+            )
+        }
 
         Box(modifier = Modifier.weight(1f)) {
             when (state) {
@@ -135,6 +144,44 @@ fun ChatScreen(
                 onDraftChange = onDraftChange,
                 onSend = onSend,
             )
+        }
+    }
+}
+
+@Composable
+private fun ConnectionBanner(
+    connecting: Boolean,
+    failed: Boolean,
+    onRetry: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AmberCard)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            connecting -> AmberText(
+                text = stringResource(R.string.chat_connecting),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = AmberMono,
+                ),
+                color = AmberMutedForeground,
+            )
+
+            failed -> {
+                AmberText(
+                    text = stringResource(R.string.chat_connect_failed),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = AmberDestructive,
+                )
+                AmberTextButton(
+                    text = stringResource(R.string.chat_connect_retry),
+                    onClick = onRetry,
+                )
+            }
         }
     }
 }

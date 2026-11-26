@@ -273,6 +273,40 @@ class MeshCoordinator(
     }
 
     /**
+     * Brings up the transport link and starts the E2E handshake by sending our
+     * public key. A timeout is a normal radio condition, not a crash: the UI
+     * turns it into "Не удалось подключиться" and offers a retry.
+     */
+    override suspend fun connect(peerId: PeerId): ConnectResult {
+        if (closed) return ConnectResult.Failed(TransportError.INTERNAL)
+        val mesh = sender ?: return ConnectResult.Failed(TransportError.INTERNAL)
+
+        val result = try {
+            mesh.connect(peerId)
+            ConnectResult.Connected
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: TransportException) {
+            when (error.code) {
+                TransportError.CONNECT_TIMEOUT,
+                TransportError.HANDSHAKE_TIMEOUT,
+                -> ConnectResult.Timeout
+
+                else -> ConnectResult.Failed(error.code)
+            }
+        } catch (error: Exception) {
+            Timber.w("Connect failed: peerId=%s", peerId)
+            ConnectResult.Failed(TransportError.INTERNAL)
+        }
+
+        if (result == ConnectResult.Connected) {
+            sendKeyExchangeIfNeeded(peerId)
+            mesh.requestRetry()
+        }
+        return result
+    }
+
+    /**
      * Accepts the key the user saw and rebuilds the session. The old session is
      * closed before a new one is derived, then stored inbound packets and the
      * outbox are woken.

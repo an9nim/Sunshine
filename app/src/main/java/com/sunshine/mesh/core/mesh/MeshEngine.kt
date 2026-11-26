@@ -87,6 +87,11 @@ class MeshEngine(
      * local node; inbound packets are never passed here. Returns how many links
      * were attempted and how many accepted the packet.
      */
+    override suspend fun connect(peerId: PeerId) {
+        if (closed) throw TransportException(TransportError.INTERNAL)
+        transport.connect(peerId)
+    }
+
     override suspend fun sendPacket(packet: ByteArray): MeshSendResult {
         if (closed) throw TransportException(TransportError.INTERNAL)
         if (packet.size != MeshPacket.TOTAL_BYTES) {
@@ -251,6 +256,9 @@ interface MeshSender : Closeable {
     val peers: StateFlow<Set<PeerId>>
 
     fun start()
+
+    /** Ensures a transport link before the E2E key exchange is attempted. */
+    suspend fun connect(peerId: PeerId)
 
     fun wrap(
         envelope: ByteArray,

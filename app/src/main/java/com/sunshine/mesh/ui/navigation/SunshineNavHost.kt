@@ -1,6 +1,7 @@
 package com.sunshine.mesh.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import com.sunshine.mesh.ui.profile.ProfileScreen
 import com.sunshine.mesh.ui.profile.ProfileViewModel
 import com.sunshine.mesh.ui.update.UpdateScreen
 import com.sunshine.mesh.ui.update.UpdateViewModel
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun SunshineNavHost(
@@ -87,6 +89,7 @@ fun SunshineNavHost(
                     scrollEvents = viewModel.events,
                     onDraftChange = viewModel::onDraftChange,
                     onSend = viewModel::send,
+                    onRetryConnect = viewModel::connect,
                     onBack = { navController.popBackStack() },
                     onNetworkClick = { navController.navigate(Route.Network.path) },
                 )
@@ -104,12 +107,18 @@ fun SunshineNavHost(
                 ),
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
+            LaunchedEffect(viewModel) {
+                viewModel.connectEvents.collect { peerId ->
+                    navController.navigate(Route.Chat.of(peerId))
+                }
+            }
             NetworkScreen(
                 state = state,
                 onToggleNetwork = viewModel::onToggleNetwork,
                 onRestartNetwork = viewModel::onRestartNetwork,
                 onRefreshPermissions = viewModel::onRefreshPermissions,
                 onPermissionsResult = viewModel::onPermissionsResult,
+                onPeerClick = viewModel::onPeerClick,
                 onBack = { navController.popBackStack() },
                 onHelpClick = { navController.navigate(Route.Help.path) },
             )

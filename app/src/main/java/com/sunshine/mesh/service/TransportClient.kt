@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.core.content.ContextCompat
+import com.sunshine.mesh.coordinator.ConnectResult
 import com.sunshine.mesh.coordinator.MeshCoordinator
+import com.sunshine.mesh.core.ids.PeerId
 import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportHub
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +58,12 @@ class TransportClient(context: Context) : NetworkControl {
             mutableRunning.value = false
             mutableStartError.value = TransportError.INTERNAL
         }
+    }
+
+    override suspend fun connect(peerId: PeerId): ConnectResult {
+        val coordinator = mutableCoordinator.value
+            ?: return ConnectResult.Failed(TransportError.NOT_CONNECTED)
+        return coordinator.connect(peerId)
     }
 
     /** Idempotent: safe to call from every screen that needs the mesh. */

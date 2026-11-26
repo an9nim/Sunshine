@@ -16,8 +16,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 
@@ -62,6 +64,7 @@ class BleTransport(
     private val centralPending = ConcurrentHashMap.newKeySet<PeerId>()
     private val peripherals = ConcurrentHashMap<Long, BlePeripheralLink>()
     private val peripheralPending = ConcurrentHashMap.newKeySet<Long>()
+    private val advertisements = ConcurrentHashMap<PeerId, BleAdvertisement>()
 
     @Volatile
     private var closed = false
@@ -92,6 +95,23 @@ class BleTransport(
                 fail(TransportError.INTERNAL)
             }
         }
+    }
+
+    override suspend fun connect(peerId: PeerId) {
+        if (closed) throw TransportException(TransportError.INTERNAL)
+        if (peerId == localPeerId) throw TransportException(TransportError.NOT_CONNECTED)
+        if (links.containsKey(peerId)) return
+
+        // The lower peerId is the central. If its advertisement was already
+        // seen, retry immediately instead of waiting for the next scan tick.
+        advertisements[peerId]?.let { advertisement ->
+            if (localPeerId.value < peerId.value) maybeConnectCentral(advertisement)
+        }
+
+        val linked = withTimeoutOrNull(BleProtocol.CONNECT_TIMEOUT_MS) {
+            peers.first { peerId in it }
+        }
+        if (linked == null) throw TransportException(TransportError.CONNECT_TIMEOUT)
     }
 
     override suspend fun send(peerId: PeerId, packet: ByteArray) {
@@ -125,7 +145,11 @@ class BleTransport(
 
     private fun handleScanEvent(event: BleScanEvent) {
         when (event) {
-            is BleScanEvent.Found -> maybeConnectCentral(event.advertisement)
+            is BleScanEvent.Found -> {
+                advertisements[event.advertisement.peerId] = event.advertisement
+                maybeConnectCentral(event.advertisement)
+            }
+
             is BleScanEvent.Failed -> fail(event.error)
         }
     }
@@ -304,6 +328,7 @@ class BleTransport(
             peripherals.clear()
             centralPending.clear()
             peripheralPending.clear()
+            advertisements.clear()
             linkJobs.clear()
             all
         }

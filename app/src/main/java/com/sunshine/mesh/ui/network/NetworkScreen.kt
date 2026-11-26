@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.sunshine.mesh.R
+import com.sunshine.mesh.core.ids.PeerId
 import com.sunshine.mesh.core.transport.TransportKind
 import com.sunshine.mesh.ui.components.AmberAvatar
 import com.sunshine.mesh.ui.components.AmberButton
@@ -59,6 +60,7 @@ fun NetworkScreen(
     onRestartNetwork: () -> Unit,
     onRefreshPermissions: () -> Unit,
     onPermissionsResult: () -> Unit,
+    onPeerClick: (PeerId) -> Unit,
     onBack: () -> Unit,
     onHelpClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -126,6 +128,7 @@ fun NetworkScreen(
                 onRequestPermissions = {
                     permissionLauncher.launch(state.missingPermissions.toTypedArray())
                 },
+                onPeerClick = onPeerClick,
                 onHelpClick = onHelpClick,
             )
         }
@@ -138,6 +141,7 @@ private fun NetworkContent(
     onToggleNetwork: () -> Unit,
     onRestartNetwork: () -> Unit,
     onRequestPermissions: () -> Unit,
+    onPeerClick: (PeerId) -> Unit,
     onHelpClick: () -> Unit,
 ) {
     LazyColumn(
@@ -170,7 +174,12 @@ private fun NetworkContent(
             item { EmptyPeersCard() }
         } else {
             items(state.peers, key = { it.peerId.value }) { peer ->
-                PeerRow(peer)
+                PeerRow(
+                    peer = peer,
+                    connecting = state.connectingPeerId == peer.peerId,
+                    failed = state.connectFailedPeerId == peer.peerId,
+                    onClick = { onPeerClick(peer.peerId) },
+                )
             }
         }
 
@@ -303,12 +312,20 @@ private fun PeersHeader(count: Int) {
 }
 
 @Composable
-private fun PeerRow(peer: NetworkPeer) {
+private fun PeerRow(
+    peer: NetworkPeer,
+    connecting: Boolean,
+    failed: Boolean,
+    onClick: () -> Unit,
+) {
     val displayName = peer.nickname.ifBlank {
         stringResource(R.string.chat_unknown_peer, peer.peerId.value.take(8))
     }
 
-    AmberCard(modifier = Modifier.fillMaxWidth()) {
+    AmberCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -339,6 +356,35 @@ private fun PeerRow(peer: NetworkPeer) {
                         TransportBadge(kind)
                     }
                 }
+                if (failed) {
+                    Spacer(Modifier.height(6.dp))
+                    AmberText(
+                        text = stringResource(R.string.network_peer_connect_failed),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AmberDestructive,
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            when {
+                connecting -> AmberText(
+                    text = stringResource(R.string.network_peer_connecting),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = AmberMono,
+                    ),
+                    color = AmberMutedForeground,
+                    maxLines = 1,
+                )
+
+                failed -> AmberTextButton(
+                    text = stringResource(R.string.network_peer_retry),
+                    onClick = onClick,
+                )
+
+                else -> AmberTextButton(
+                    text = stringResource(R.string.network_peer_write),
+                    onClick = onClick,
+                )
             }
         }
     }

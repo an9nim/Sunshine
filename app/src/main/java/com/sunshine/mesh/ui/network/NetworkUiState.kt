@@ -13,6 +13,8 @@ sealed interface NetworkUiState {
         val peers: List<NetworkPeer>,
         val missingPermissions: List<String>,
         val permissionsDenied: Boolean,
+        val connectingPeerId: PeerId? = null,
+        val connectFailedPeerId: PeerId? = null,
     ) : NetworkUiState
 
     data object Failed : NetworkUiState

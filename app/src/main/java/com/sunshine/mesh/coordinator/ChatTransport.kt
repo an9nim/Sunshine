@@ -11,5 +11,8 @@ interface ChatTransport {
 
     val events: SharedFlow<MeshEvent>
 
+    /** Fakes that are always online may keep the default. */
+    suspend fun connect(peerId: PeerId): ConnectResult = ConnectResult.Connected
+
     suspend fun sendText(peerId: PeerId, text: String): SendTextResult
 }

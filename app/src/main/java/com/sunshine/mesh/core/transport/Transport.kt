@@ -30,6 +30,15 @@ interface Transport : Closeable {
 
     fun start()
 
+    /**
+     * Ensures a link to [peerId]. The default implementation only accepts an
+     * already-established link; radio transports override it with a bounded
+     * wait while their scanner or connector is working.
+     */
+    suspend fun connect(peerId: PeerId) {
+        if (peerId !in peers.value) throw TransportException(TransportError.NOT_CONNECTED)
+    }
+
     suspend fun send(peerId: PeerId, packet: ByteArray)
 
     override fun close()

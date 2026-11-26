@@ -426,6 +426,8 @@ class MeshCoordinatorTest {
 
         override fun start() = Unit
 
+        override suspend fun connect(peerId: PeerId) = Unit
+
         override fun wrap(
             envelope: ByteArray,
             recipientId: PeerId,

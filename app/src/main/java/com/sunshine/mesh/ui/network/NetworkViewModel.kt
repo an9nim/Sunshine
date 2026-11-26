@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.sunshine.mesh.coordinator.ConnectResult
 import com.sunshine.mesh.core.ids.PeerId
 import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportKind
@@ -14,14 +15,18 @@ import com.sunshine.mesh.domain.model.Peer
 import com.sunshine.mesh.service.NetworkControl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class NetworkViewModel(
@@ -36,6 +41,13 @@ class NetworkViewModel(
             denied = false,
         ),
     )
+
+    private val connectingPeer = MutableStateFlow<PeerId?>(null)
+    private val connectFailedPeer = MutableStateFlow<PeerId?>(null)
+    private val connectSignals = MutableSharedFlow<PeerId>(extraBufferCapacity = 1)
+
+    /** Emits the peer whose link is ready; the nav host then opens its chat. */
+    val connectEvents: SharedFlow<PeerId> = connectSignals.asSharedFlow()
 
     private val statusFlow: Flow<NetworkStatus> = combine(
         control.hub.flatMapLatest { hub ->
@@ -60,12 +72,16 @@ class NetworkViewModel(
         statusFlow,
         peersFlow,
         permissionState,
-    ) { status, peers, permissions ->
+        connectingPeer,
+        connectFailedPeer,
+    ) { status, peers, permissions, connecting, failed ->
         NetworkUiState.Ready(
             status = status,
             peers = peers,
             missingPermissions = permissions.missing,
             permissionsDenied = permissions.denied,
+            connectingPeerId = connecting,
+            connectFailedPeerId = failed,
         )
     }
 
@@ -92,6 +108,38 @@ class NetworkViewModel(
 
     fun onRestartNetwork() {
         control.restart()
+    }
+
+    /**
+     * Connects before navigating: a link that is already up returns at once,
+     * otherwise the row shows "Подключение…" until the transport timeout.
+     */
+    fun onPeerClick(peerId: PeerId) {
+        if (connectingPeer.value != null) return
+        connectFailedPeer.value = null
+        connectingPeer.value = peerId
+
+        viewModelScope.launch {
+            val result = try {
+                control.connect(peerId)
+            } catch (error: CancellationException) {
+                connectingPeer.value = null
+                throw error
+            } catch (error: Exception) {
+                Timber.w("Peer connect crashed: peerId=%s", peerId)
+                ConnectResult.Failed(TransportError.INTERNAL)
+            }
+
+            connectingPeer.value = null
+            when (result) {
+                ConnectResult.Connected -> connectSignals.tryEmit(peerId)
+                ConnectResult.Timeout -> connectFailedPeer.value = peerId
+                is ConnectResult.Failed -> {
+                    Timber.w("Peer connect failed: peerId=%s code=%s", peerId, result.error)
+                    connectFailedPeer.value = peerId
+                }
+            }
+        }
     }
 
     /** Re-reads permissions after returning from system settings. */

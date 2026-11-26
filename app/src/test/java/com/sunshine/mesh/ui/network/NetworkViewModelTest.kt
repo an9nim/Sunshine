@@ -1,5 +1,6 @@
 package com.sunshine.mesh.ui.network
 
+import com.sunshine.mesh.coordinator.ConnectResult
 import com.sunshine.mesh.core.ids.PeerId
 import com.sunshine.mesh.core.transport.InboundPacket
 import com.sunshine.mesh.core.transport.Transport
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -145,6 +147,45 @@ class NetworkViewModelTest {
     }
 
     @Test
+    fun peerClickConnectsAndEmitsNavigation() = runTest(dispatcher) {
+        val control = FakeNetworkControl()
+        val viewModel = createViewModel(control)
+        backgroundScope.launch { viewModel.state.collect() }
+        val opened = mutableListOf<PeerId>()
+        backgroundScope.launch { viewModel.connectEvents.collect { opened += it } }
+        advanceUntilIdle()
+
+        viewModel.onPeerClick(PEER_A)
+        advanceUntilIdle()
+
+        assertEquals(listOf(PEER_A), control.connectedPeers)
+        assertEquals(listOf(PEER_A), opened)
+        val state = viewModel.ready()
+        assertNull(state.connectingPeerId)
+        assertNull(state.connectFailedPeerId)
+    }
+
+    @Test
+    fun connectTimeoutShowsErrorAndStaysOnNetwork() = runTest(dispatcher) {
+        val control = FakeNetworkControl().apply {
+            connectResult = ConnectResult.Timeout
+        }
+        val viewModel = createViewModel(control)
+        backgroundScope.launch { viewModel.state.collect() }
+        val opened = mutableListOf<PeerId>()
+        backgroundScope.launch { viewModel.connectEvents.collect { opened += it } }
+        advanceUntilIdle()
+
+        viewModel.onPeerClick(PEER_A)
+        advanceUntilIdle()
+
+        assertEquals(listOf(PEER_A), control.connectedPeers)
+        assertTrue(opened.isEmpty())
+        assertNull(viewModel.ready().connectingPeerId)
+        assertEquals(PEER_A, viewModel.ready().connectFailedPeerId)
+    }
+
+    @Test
     fun peersAreMergedWithNicknamesAndTransports() {
         val links = mapOf(
             PEER_A to setOf(TransportKind.BLE, TransportKind.WIFI_DIRECT),
@@ -198,6 +239,13 @@ class NetworkViewModelTest {
         var starts = 0
         var stops = 0
         var restarts = 0
+        var connectResult: ConnectResult = ConnectResult.Connected
+        val connectedPeers = mutableListOf<PeerId>()
+
+        override suspend fun connect(peerId: PeerId): ConnectResult {
+            connectedPeers += peerId
+            return connectResult
+        }
 
         override fun start() {
             starts += 1

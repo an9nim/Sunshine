@@ -1,6 +1,7 @@
 package com.sunshine.mesh.ui.chat
 
 import com.sunshine.mesh.coordinator.ChatTransport
+import com.sunshine.mesh.coordinator.ConnectResult
 import com.sunshine.mesh.coordinator.MeshEvent
 import com.sunshine.mesh.coordinator.PendingReason
 import com.sunshine.mesh.coordinator.SendError
@@ -25,6 +26,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -126,6 +128,42 @@ class ChatViewModelTest {
         assertEquals(ChatNotice.NETWORK_OFFLINE, state.notice)
     }
 
+    @Test
+    fun connectFailureIsShownInState() = runTest(dispatcher) {
+        val transport = FakeChatTransport(
+            result = SendTextResult.Sent(MESSAGE_ID),
+            connectResult = ConnectResult.Timeout,
+        )
+        val viewModel = createViewModel(transport)
+        backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as ChatUiState.Ready
+        assertTrue(state.connectFailed)
+        assertFalse(state.connecting)
+        assertEquals(1, transport.connects)
+    }
+
+    @Test
+    fun retryAfterConnectFailureRunsConnectAgain() = runTest(dispatcher) {
+        val transport = FakeChatTransport(
+            result = SendTextResult.Sent(MESSAGE_ID),
+            connectResult = ConnectResult.Timeout,
+        )
+        val viewModel = createViewModel(transport)
+        backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        transport.connectResult = ConnectResult.Connected
+        viewModel.connect()
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as ChatUiState.Ready
+        assertFalse(state.connectFailed)
+        assertFalse(state.connecting)
+        assertEquals(2, transport.connects)
+    }
+
     private fun createViewModel(transport: ChatTransport?): ChatViewModel =
         ChatViewModel(
             peerId = PEER_ID,
@@ -142,10 +180,17 @@ class ChatViewModelTest {
 
     private class FakeChatTransport(
         private val result: SendTextResult,
+        var connectResult: ConnectResult = ConnectResult.Connected,
     ) : ChatTransport {
 
         override val events = MutableSharedFlow<MeshEvent>(extraBufferCapacity = 8)
         val sentTexts = mutableListOf<String>()
+        var connects = 0
+
+        override suspend fun connect(peerId: PeerId): ConnectResult {
+            connects += 1
+            return connectResult
+        }
 
         override suspend fun sendText(peerId: PeerId, text: String): SendTextResult {
             sentTexts += text

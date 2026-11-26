@@ -1,14 +1,18 @@
 package com.sunshine.mesh.core.transport
 
 import com.sunshine.mesh.core.ids.PeerId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -101,6 +105,50 @@ class TransportHub(
         }
         if (startedCount == 0) {
             throw firstError ?: TransportException(TransportError.INTERNAL)
+        }
+    }
+
+    /**
+     * Races every transport: BLE and Wi-Fi Direct usually see the same peer,
+     * and the first successful link wins. A transport that has no discovery
+     * data fails fast, so the other one still gets its full timeout.
+     */
+    override suspend fun connect(peerId: PeerId) {
+        if (closed) throw TransportException(TransportError.INTERNAL)
+        if (peerId in peers.value || transports.any { peerId in it.peers.value }) return
+
+        coroutineScope {
+            val results = Channel<TransportException?>(transports.size)
+            val attempts = transports.map { transport ->
+                launch {
+                    val error = try {
+                        transport.connect(peerId)
+                        null
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: TransportException) {
+                        error
+                    } catch (error: Exception) {
+                        TransportException(TransportError.INTERNAL, error)
+                    }
+                    results.send(error)
+                }
+            }
+
+            var connected = false
+            var lastError: TransportException? = null
+            var remaining = attempts.size
+            while (remaining > 0) {
+                val error = results.receive()
+                remaining -= 1
+                if (error == null) {
+                    connected = true
+                    break
+                }
+                lastError = error
+            }
+            attempts.forEach { it.cancel() }
+            if (!connected) throw lastError ?: TransportException(TransportError.NOT_CONNECTED)
         }
     }
 

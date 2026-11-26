@@ -6,15 +6,18 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.sunshine.mesh.coordinator.ChatTransport
+import com.sunshine.mesh.coordinator.ConnectResult
 import com.sunshine.mesh.coordinator.MeshEvent
 import com.sunshine.mesh.coordinator.PendingReason
 import com.sunshine.mesh.coordinator.SendError
 import com.sunshine.mesh.coordinator.SendTextResult
 import com.sunshine.mesh.core.ids.PeerId
+import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.data.chat.ChatDataSource
 import com.sunshine.mesh.domain.model.ChatMessage
 import com.sunshine.mesh.domain.model.Peer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -39,7 +43,9 @@ class ChatViewModel(
     private val draft = MutableStateFlow("")
     private val sending = MutableStateFlow(false)
     private val notice = MutableStateFlow<ChatNotice?>(null)
+    private val connection = MutableStateFlow(ConnectionState())
     private val scrollSignals = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private var connectJob: Job? = null
 
     /** Emitted when an incoming message should scroll the list to the bottom. */
     val events: SharedFlow<Unit> = scrollSignals.asSharedFlow()
@@ -61,7 +67,8 @@ class ChatViewModel(
         draft,
         sending,
         notice,
-    ) { content, draft, sending, notice ->
+        connection,
+    ) { content, draft, sending, notice, connection ->
         ChatUiState.Ready(
             peer = content.peer,
             messages = content.messages,
@@ -73,6 +80,8 @@ class ChatViewModel(
             } else {
                 null
             },
+            connecting = connection.connecting,
+            connectFailed = connection.failed,
         )
     }
 
@@ -88,6 +97,11 @@ class ChatViewModel(
 
     init {
         observeTransportEvents()
+        viewModelScope.launch {
+            // The service may bind a moment after navigation.
+            transport.filterNotNull().first()
+            connect()
+        }
     }
 
     fun onDraftChange(value: String) {
@@ -132,6 +146,43 @@ class ChatViewModel(
         }
     }
 
+    /** Called on entry and from the retry button in the connection banner. */
+    fun connect() {
+        val activeTransport = transport.value
+        if (activeTransport == null) {
+            connection.value = ConnectionState(failed = true)
+            return
+        }
+        if (connectJob?.isActive == true) return
+
+        connection.value = ConnectionState(connecting = true)
+        connectJob = viewModelScope.launch {
+            val result = try {
+                activeTransport.connect(peerId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.w("Chat connect crashed: peerId=%s", peerId)
+                ConnectResult.Failed(TransportError.INTERNAL)
+            }
+
+            connection.value = ConnectionState(
+                failed = result != ConnectResult.Connected,
+            )
+            when (result) {
+                ConnectResult.Connected -> Unit
+                ConnectResult.Timeout ->
+                    Timber.w("Chat connect timeout: peerId=%s", peerId)
+
+                is ConnectResult.Failed -> Timber.w(
+                    "Chat connect failed: peerId=%s code=%s",
+                    peerId,
+                    result.error,
+                )
+            }
+        }
+    }
+
     private fun observeTransportEvents() {
         viewModelScope.launch {
             transport
@@ -161,6 +212,11 @@ class ChatViewModel(
         val peer: Peer?,
         val messages: List<ChatMessage>,
         val transportAvailable: Boolean,
+    )
+
+    private data class ConnectionState(
+        val connecting: Boolean = false,
+        val failed: Boolean = false,
     )
 
     companion object {

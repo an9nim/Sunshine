@@ -17,10 +17,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.IOException
 import java.net.ServerSocket
@@ -63,6 +65,7 @@ class WifiDirectTransport(
     private val links = ConcurrentHashMap<PeerId, WifiDirectSocketLink>()
     private val linkJobs = ConcurrentHashMap<PeerId, Job>()
     private val pending = ConcurrentHashMap.newKeySet<PeerId>()
+    private val found = ConcurrentHashMap<PeerId, WifiDirectDiscoveryEvent.Found>()
 
     @Volatile
     private var closed = false
@@ -97,6 +100,21 @@ class WifiDirectTransport(
         }
     }
 
+    override suspend fun connect(peerId: PeerId) {
+        if (closed) throw TransportException(TransportError.INTERNAL)
+        if (peerId == localPeerId) throw TransportException(TransportError.NOT_CONNECTED)
+        if (links.containsKey(peerId)) return
+
+        // Reuse the last discovery result: the GO side creates the group and
+        // the client side dials the owner address.
+        found[peerId]?.let(::onFound)
+
+        val linked = withTimeoutOrNull(WifiDirectProtocol.CONNECT_TIMEOUT_MS) {
+            peers.first { peerId in it }
+        }
+        if (linked == null) throw TransportException(TransportError.CONNECT_TIMEOUT)
+    }
+
     override suspend fun send(peerId: PeerId, packet: ByteArray) {
         if (closed) throw TransportException(TransportError.INTERNAL)
         val link = links[peerId] ?: throw TransportException(TransportError.NOT_CONNECTED)
@@ -122,6 +140,7 @@ class WifiDirectTransport(
     private fun onFound(event: WifiDirectDiscoveryEvent.Found) {
         val remote = event.peerId
         if (remote == localPeerId) return
+        found[remote] = event
 
         if (localPeerId.value > remote.value) {
             ensureGroup()
@@ -262,6 +281,7 @@ class WifiDirectTransport(
             val all = links.values.toList()
             links.clear()
             pending.clear()
+            found.clear()
             linkJobs.clear()
             all
         }
