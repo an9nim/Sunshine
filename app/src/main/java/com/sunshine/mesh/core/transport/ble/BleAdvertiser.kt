@@ -15,6 +15,16 @@ interface BleAdvertiser : Closeable {
 
     fun start(peerId: PeerId)
 
+    /**
+     * Re-arms advertising after the controller dropped it: a central attached
+     * or detached. The default stops and starts; implementations whose stack
+     * silently stopped advertising may override this with a cheaper path.
+     */
+    fun restart(peerId: PeerId) {
+        stop()
+        start(peerId)
+    }
+
     fun stop()
 
     override fun close()

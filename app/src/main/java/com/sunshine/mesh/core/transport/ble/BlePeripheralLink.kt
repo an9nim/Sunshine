@@ -48,6 +48,15 @@ class BlePeripheralLink(
 
     @Volatile
     private var remotePeerId: PeerId? = null
+
+    /**
+     * The peer id once HELLO/HELLO_ACK succeeded, or null before and after a
+     * failed handshake. Unlike [peerId] it never throws, so disconnect
+     * handling can branch on it after [fail] completed the deferreds.
+     */
+    val establishedPeerId: PeerId?
+        get() = remotePeerId
+
     override val peerId: PeerId
         get() = requireNotNull(remotePeerId) { "peripheral link is not established" }
 

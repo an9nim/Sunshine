@@ -1,5 +1,6 @@
 package com.sunshine.mesh.core.transport.ble
 
+import android.bluetooth.BluetoothDevice
 import com.sunshine.mesh.core.ids.PeerId
 import com.sunshine.mesh.core.transport.TransportError
 import com.sunshine.mesh.core.transport.TransportException
@@ -162,6 +163,69 @@ class BleTransportTest {
     }
 
     @Test
+    fun serverConnectionReArmsAdvertising() = runBlocking {
+        val fixture = Fixture(localPeerId = remote, scope = this)
+        try {
+            fixture.transport.start()
+            fixture.transport.state.first { it is TransportState.Running }
+            assertEquals(1, fixture.advertiser.startCount)
+
+            val connection = stubConnection(id = 1L)
+            fixture.server.eventsChannel.trySend(BleGattServerEvent.Connected(connection))
+            delay(100)
+            assertEquals(1, fixture.advertiser.restartCount)
+
+            // The handshake never completed: the disconnect must clean up the
+            // half-open link without throwing from the event collector.
+            fixture.server.eventsChannel.trySend(
+                BleGattServerEvent.Disconnected(connection, TransportError.LINK_LOST),
+            )
+            delay(100)
+
+            assertEquals(2, fixture.advertiser.restartCount)
+            assertEquals(emptySet<PeerId>(), fixture.transport.peers.value)
+            assertTrue(fixture.transport.state.value is TransportState.Running)
+        } finally {
+            fixture.transport.close()
+        }
+    }
+
+    @Test
+    fun establishedPeripheralLinkIsRemovedOnDisconnect() = runBlocking {
+        val fixture = Fixture(localPeerId = remote, scope = this)
+        try {
+            fixture.transport.start()
+            fixture.transport.state.first { it is TransportState.Running }
+
+            val connection = stubConnection(id = 7L)
+            fixture.server.eventsChannel.trySend(BleGattServerEvent.Connected(connection))
+            fixture.server.eventsChannel.trySend(
+                BleGattServerEvent.IndicationsChanged(connection, true),
+            )
+            fixture.server.eventsChannel.trySend(
+                BleGattServerEvent.FrameReceived(
+                    connection,
+                    BleFrameCodec.encodeHello(local),
+                ),
+            )
+            assertEquals(
+                setOf(local),
+                withTimeout(1_000) { fixture.transport.peers.first { it.isNotEmpty() } },
+            )
+
+            fixture.server.eventsChannel.trySend(
+                BleGattServerEvent.Disconnected(connection, null),
+            )
+            withTimeout(1_000) { fixture.transport.peers.first { it.isEmpty() } }
+
+            assertEquals(2, fixture.advertiser.restartCount)
+            assertTrue(fixture.transport.state.value is TransportState.Running)
+        } finally {
+            fixture.transport.close()
+        }
+    }
+
+    @Test
     fun peersFlowTracksEstablishedLinks() = runBlocking {
         val fixture = Fixture(local, this)
         try {
@@ -213,6 +277,17 @@ class BleTransportTest {
         )
     }
 
+    /** android.jar stubs cannot be constructed; allocate one without a constructor. */
+    private fun stubConnection(id: Long): BleServerConnection {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val theUnsafe = unsafeClass.getDeclaredField("theUnsafe")
+            .apply { isAccessible = true }
+            .get(null)
+        val allocateInstance = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        val device = allocateInstance.invoke(theUnsafe, BluetoothDevice::class.java) as BluetoothDevice
+        return BleServerConnection(id = id, device = device)
+    }
+
     private fun Channel<BleScanEvent>.tryScanFound(peerId: PeerId) {
         trySend(
             BleScanEvent.Found(
@@ -242,12 +317,20 @@ class BleTransportTest {
     private class FakeAdvertiser : BleAdvertiser {
         val eventsChannel = Channel<BleAdvertiseEvent>(Channel.UNLIMITED)
         override val events: Flow<BleAdvertiseEvent> = eventsChannel.receiveAsFlow()
+        var startCount = 0
+        var restartCount = 0
         var startedPeerId: PeerId? = null
         var closed = false
 
         override fun start(peerId: PeerId) {
+            startCount += 1
             startedPeerId = peerId
             eventsChannel.trySend(BleAdvertiseEvent.Started)
+        }
+
+        override fun restart(peerId: PeerId) {
+            restartCount += 1
+            startedPeerId = peerId
         }
 
         override fun stop() = Unit

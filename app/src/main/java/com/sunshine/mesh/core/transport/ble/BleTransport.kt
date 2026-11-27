@@ -135,7 +135,16 @@ class BleTransport(
         }
         transportScope.launch {
             advertiser.events.collect { event ->
-                if (event is BleAdvertiseEvent.Failed) fail(event.error)
+                if (event !is BleAdvertiseEvent.Failed) return@collect
+                // A controller that cannot advertise while connected rejects
+                // the re-arm after a central attached. The live link keeps
+                // working and the next disconnect re-arms advertising, so only
+                // an idle peripheral is treated as broken.
+                if (synchronized(registryLock) { activeCount() } > 0) {
+                    Timber.w("BLE advertising failed while linked: code=%s", event.error)
+                } else {
+                    fail(event.error)
+                }
             }
         }
         transportScope.launch {
@@ -200,9 +209,15 @@ class BleTransport(
 
     private fun handleServerEvent(event: BleGattServerEvent) {
         when (event) {
-            is BleGattServerEvent.Connected -> onServerConnected(event.connection)
-            is BleGattServerEvent.Disconnected ->
+            is BleGattServerEvent.Connected -> {
+                restartAdvertising()
+                onServerConnected(event.connection)
+            }
+
+            is BleGattServerEvent.Disconnected -> {
+                restartAdvertising()
                 onServerDisconnected(event.connection, event.error)
+            }
             is BleGattServerEvent.MtuChanged ->
                 peripherals[event.connection.id]?.onMtuChanged(event.mtu)
             is BleGattServerEvent.IndicationsChanged ->
@@ -271,9 +286,13 @@ class BleTransport(
             peripherals.remove(connection.id)
         } ?: return
 
+        // Read before onDisconnected(): fail() completes the handshake deferred
+        // exceptionally, and isCompleted is true for a failed handshake too,
+        // while peerId still throws because no HELLO ever arrived.
+        val peerId = link.establishedPeerId
         link.onDisconnected(error)
-        if (link.established.isCompleted) {
-            removeEstablishedLink(link.peerId)
+        if (peerId != null) {
+            removeEstablishedLink(peerId)
         } else {
             link.close()
             updateRunningState()
@@ -311,6 +330,23 @@ class BleTransport(
         }
         link?.close()
         updateRunningState()
+    }
+
+    /**
+     * Re-arms advertising on every connection state change. The controller
+     * stops connectable advertising as soon as a central attaches and never
+     * restores it on its own: without this the peripheral stays invisible to
+     * every other device and cannot be found again once this link drops.
+     */
+    private fun restartAdvertising() {
+        if (closed) return
+        try {
+            advertiser.restart(localPeerId)
+        } catch (error: TransportException) {
+            fail(error.code)
+        } catch (error: Exception) {
+            fail(TransportError.INTERNAL)
+        }
     }
 
     private fun fail(error: TransportError) {
